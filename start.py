@@ -178,9 +178,9 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5, skip_confir
     total_files = len(all_files)
     print(f"Found {total_files:,} files to process.")
     
-    # Estimate runtime using first file as benchmark (unless skipped)
+    # Estimate runtime using first 50 files as benchmark (unless skipped)
     if not skip_confirmation and total_files > 0:
-        estimate_runtime_and_confirm(target_features, all_files[0], total_files)
+        estimate_runtime_and_confirm(target_features, all_files, total_files)
 
     best_match = None
     min_distance = float('inf')
@@ -308,26 +308,34 @@ Note: The script compares input.png (or specified image) against all skin files
     return parser.parse_args()
 
 
-def estimate_runtime_and_confirm(target_features, test_file_path, file_count):
-    """Estimate runtime by benchmarking against a test file and ask for confirmation if it exceeds 5 minutes."""
-    print("   Running benchmark comparison...")
+def estimate_runtime_and_confirm(target_features, test_files, file_count):
+    """Estimate runtime by benchmarking against first 50 files and ask for confirmation if it exceeds 5 minutes."""
+    print("   Running benchmark on first 50 files...")
     
-    # Time a single comparison
+    # Benchmark with first 50 files (or less if not enough files)
+    benchmark_count = min(50, len(test_files))
     benchmark_start = time.time()
-    test_features, error = get_image_features(test_file_path)
+    successful_comparisons = 0
     
-    if test_features is not None:
-        calculate_similarity(target_features, test_features)
-        time_per_file = time.time() - benchmark_start
+    for test_file_path in test_files[:benchmark_count]:
+        test_features, error = get_image_features(test_file_path)
+        if test_features is not None:
+            calculate_similarity(target_features, test_features)
+            successful_comparisons += 1
+    
+    benchmark_elapsed = time.time() - benchmark_start
+    
+    if successful_comparisons > 0:
+        time_per_file = benchmark_elapsed / benchmark_count
     else:
-        # Fallback to rough estimate if benchmark fails
+        # Fallback to rough estimate if all benchmarks failed
         time_per_file = 0.02
         print("   (Benchmark failed, using estimated time)")
     
     estimated_seconds = file_count * time_per_file
     estimated_minutes = estimated_seconds / 60
     
-    print(f"   Benchmark: {time_per_file*1000:.1f}ms per file")
+    print(f"   Benchmark: {time_per_file*1000:.1f}ms per file (avg of {benchmark_count} files)")
     
     if estimated_minutes > 5:
         hours = int(estimated_minutes // 60)
