@@ -4,3 +4,7 @@
 # Except start.py
 !start.py
 !copy_skins.py
+
+# GitHub workflows
+!.github/
+!.github/**
