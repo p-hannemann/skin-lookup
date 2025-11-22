@@ -141,47 +141,56 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
         print(f"Fatal Error: Could not extract features for {TARGET_RENDER_FILE}. Reason: {error}")
         return None
 
+    # First pass: Count all files
+    print(f"\nCounting files in directory...")
+    all_files = []
+    for root, _, files in os.walk(root_dir):
+        for file_name in files:
+            all_files.append(os.path.join(root, file_name))
+    
+    total_files = len(all_files)
+    print(f"Found {total_files} files to process.\n")
+
     best_match = None
     min_distance = float('inf')
     best_metrics = None
-    total_files = 0
     processed_files = 0
+    skipped_files = 0
     top_matches = []  # Store top N matches
 
-    print(f"\nStarting multi-metric comparison...")
+    print(f"Starting multi-metric comparison...")
     print(f"Weights: pHash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, SSIM={WEIGHT_SSIM}\n")
 
-    # Recursively search the root directory
-    for root, _, files in os.walk(root_dir):
-        for file_name in files:
-            file_path = os.path.join(root, file_name)
-            total_files += 1
+    # Second pass: Process all files
+    for file_path in all_files:
+        candidate_features, error = get_image_features(file_path)
 
-            candidate_features, error = get_image_features(file_path)
+        if candidate_features is not None:
+            processed_files += 1
 
-            if candidate_features is not None:
-                processed_files += 1
+            if processed_files % 1000 == 0:
+                print(f"Progress: {processed_files}/{total_files} processed ({skipped_files} skipped)")
 
-                if processed_files % 1000 == 0:
-                    print(f"Progress: Processed {processed_files}/{total_files} files...")
+            distance, metrics = calculate_similarity(target_features, candidate_features)
 
-                distance, metrics = calculate_similarity(target_features, candidate_features)
+            # Keep track of top N matches
+            top_matches.append((distance, file_path, metrics))
+            top_matches.sort(key=lambda x: x[0])
+            top_matches = top_matches[:show_top_n]
 
-                # Keep track of top N matches
-                top_matches.append((distance, file_path, metrics))
-                top_matches.sort(key=lambda x: x[0])
-                top_matches = top_matches[:show_top_n]
-
-                if distance < min_distance:
-                    min_distance = distance
-                    best_match = file_path
-                    best_metrics = metrics
+            if distance < min_distance:
+                min_distance = distance
+                best_match = file_path
+                best_metrics = metrics
+        else:
+            skipped_files += 1
 
     print("\n" + "="*70)
     print("--- SEARCH RESULTS ---")
     print("="*70)
-    print(f"Examined {total_files} files.")
-    print(f"Successfully processed {processed_files} files.\n")
+    print(f"Total files: {total_files}")
+    print(f"Successfully processed: {processed_files}")
+    print(f"Skipped (errors): {skipped_files}\n")
 
     if best_match:
         print(f"🏆 BEST MATCH: {os.path.basename(best_match)}")
@@ -200,7 +209,7 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
                       f"SSIM: {metrics['ssim_value']:.4f}")
         
         print("="*70)
-        return best_match
+        return top_matches  # Return all top matches instead of just best
     else:
         print(f"No suitable files were successfully processed in the directory: {root_dir}")
         return None
@@ -208,11 +217,23 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
 
 if __name__ == "__main__":
 
-    # 1. Create Output Directory (NEW)
-    if not os.path.exists(OUTPUT_DIR_ABS_PATH):
+    # 1. Prepare Output Directory - Clear existing files and create if needed
+    if os.path.exists(OUTPUT_DIR_ABS_PATH):
+        # Clear all existing files in the output directory
+        try:
+            for filename in os.listdir(OUTPUT_DIR_ABS_PATH):
+                file_path = os.path.join(OUTPUT_DIR_ABS_PATH, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            print(f"Cleared existing files from output directory: {OUTPUT_DIR_RELATIVE}")
+        except Exception as e:
+            print(f"*** ERROR: Could not clear output directory. {e} ***")
+            exit()
+    else:
+        # Create the output directory if it doesn't exist
         try:
             os.makedirs(OUTPUT_DIR_ABS_PATH)
-            print(f"Created output directory: **{OUTPUT_DIR_RELATIVE}**")
+            print(f"Created output directory: {OUTPUT_DIR_RELATIVE}")
         except Exception as e:
             print(f"*** ERROR: Could not create output directory. {e} ***")
             exit()
@@ -230,21 +251,31 @@ if __name__ == "__main__":
     else:
         print(f"Starting search recursively from: {SKIN_ROOT_DIR}")
 
-        # Run the search and get the path of the best match
-        best_match_path = find_closest_match(SKIN_ROOT_DIR, TARGET_FILE_ABS_PATH)
+        # Run the search and get the top matches
+        top_matches = find_closest_match(SKIN_ROOT_DIR, TARGET_FILE_ABS_PATH, show_top_n=5)
 
-        # 3. Copy the file if a match was found (NEW)
-        if best_match_path:
-            # The file name is the hash (e.g., '00022cceee157dfc...')
-            source_filename = os.path.basename(best_match_path)
+        # 3. Copy all top matches if found
+        if top_matches:
+            print(f"\n{'='*70}")
+            print("Copying top {0} matches to output directory...".format(len(top_matches)))
+            print(f"{'='*70}\n")
+            
+            for i, (distance, match_path, metrics) in enumerate(top_matches, 1):
+                # The file name is the hash (e.g., '00022cceee157dfc...')
+                source_filename = os.path.basename(match_path)
 
-            # Destination filename will be the hash + ".png"
-            dest_filename = f"{source_filename}.png"
-            dest_file_abs_path = os.path.join(OUTPUT_DIR_ABS_PATH, dest_filename)
+                # Destination filename: rank_originalname.png
+                dest_filename = f"match_{i}_{source_filename}.png"
+                dest_file_abs_path = os.path.join(OUTPUT_DIR_ABS_PATH, dest_filename)
 
-            try:
-                # copy2 preserves metadata like modification times
-                shutil.copy2(best_match_path, dest_file_abs_path)
-                print(f"\n[OUTPUT] Copied match to: **{dest_file_abs_path}**")
-            except Exception as e:
-                print(f"\n*** ERROR: Failed to copy the matched file. {e} ***")
+                try:
+                    # copy2 preserves metadata like modification times
+                    shutil.copy2(match_path, dest_file_abs_path)
+                    print(f"✅ Match #{i}: {dest_filename}")
+                    print(f"   Distance: {distance:.6f} | SSIM: {metrics['ssim_value']:.4f}")
+                except Exception as e:
+                    print(f"❌ ERROR copying match #{i}: {e}")
+            
+            print(f"\n{'='*70}")
+            print(f"✅ Copied {len(top_matches)} matches to: {OUTPUT_DIR_ABS_PATH}")
+            print(f"{'='*70}")
