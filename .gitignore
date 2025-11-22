@@ -1,3 +1,5 @@
-/skins/
-/output/
-/input.png
+# Ignore everything
+*
+
+# Except start.py
+!start.py
