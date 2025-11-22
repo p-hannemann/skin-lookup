@@ -186,6 +186,7 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
     print(f"Weights: Hash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, Colors={WEIGHT_DOMINANT_COLORS}\n")
 
     # Second pass: Process all files
+    comparison_start_time = time.time()
     for idx, file_path in enumerate(all_files, 1):
         candidate_features, error = get_image_features(file_path)
 
@@ -211,7 +212,24 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
             bar_length = 50
             filled = int(bar_length * idx / total_files)
             bar = '█' * filled + '░' * (bar_length - filled)
-            print(f"\r[{bar}] {percent:.1f}% ({idx}/{total_files}) | Processed: {processed_files} | Skipped: {skipped_files}", end='', flush=True)
+            
+            # Calculate ETA
+            elapsed = time.time() - comparison_start_time
+            if idx > 0:
+                avg_time_per_file = elapsed / idx
+                remaining_files = total_files - idx
+                eta_seconds = avg_time_per_file * remaining_files
+                
+                if eta_seconds < 60:
+                    eta_str = f"{int(eta_seconds)}s"
+                else:
+                    eta_minutes = int(eta_seconds // 60)
+                    eta_secs = int(eta_seconds % 60)
+                    eta_str = f"{eta_minutes}m {eta_secs}s"
+            else:
+                eta_str = "calculating..."
+            
+            print(f"\r[{bar}] {percent:.1f}% ({idx}/{total_files}) | Processed: {processed_files} | Skipped: {skipped_files} | ETA: {eta_str}", end='', flush=True)
 
     print("\n\n" + "="*70)
     print("--- SEARCH RESULTS ---")
