@@ -3,8 +3,6 @@ import shutil
 from PIL import Image
 import numpy as np
 import imagehash
-from scipy.ndimage import uniform_filter
-from scipy.ndimage import variance
 import time
 import argparse
 import sys
@@ -217,7 +215,7 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5, skip_confir
     print(f"\nStarting multi-metric comparison...")
     print(f"Weights: Hash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, Colors={WEIGHT_DOMINANT_COLORS}\n")
 
-    # Second pass: Process all files
+    # Process all files sequentially (simple and memory-efficient)
     comparison_start_time = time.time()
     for idx, file_path in enumerate(all_files, 1):
         candidate_features, error = get_image_features(file_path)
