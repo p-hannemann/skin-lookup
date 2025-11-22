@@ -6,6 +6,8 @@ import imagehash
 from scipy.ndimage import uniform_filter
 from scipy.ndimage import variance
 import time
+import argparse
+import sys
 
 # --- USER CONFIGURATION (Simple Relative Paths) ---
 
@@ -199,7 +201,7 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
             all_files.append(os.path.join(root, file_name))
     
     total_files = len(all_files)
-    print(f"Found {total_files} files to process.\n")
+    print(f"Found {total_files:,} files to process.")
 
     best_match = None
     min_distance = float('inf')
@@ -287,9 +289,92 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
         return None
 
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Minecraft Skin Matcher - Find matching skin files for a 3D rendered skin image.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  python start.py
+      Run with default settings (searches ./skins directory)
+  
+  python start.py -p "C:\\Users\\Username\\AppData\\Roaming\\.minecraft\\assets\\skins"
+      Search a custom directory for skin matches
+  
+  python start.py -p "D:\\MinecraftSkins" -i "my_render.png"
+      Search custom directory with a different input image
+
+Note: The script compares input.png (or specified image) against all skin files
+      in the search directory and copies the top 5 matches to ./output/
+        '''
+    )
+    
+    parser.add_argument(
+        '-p', '--path',
+        type=str,
+        default=None,
+        metavar='PATH',
+        help='Absolute path to the directory containing skin files to search. If not specified, uses ./skins relative to script location.'
+    )
+    
+    parser.add_argument(
+        '-i', '--input',
+        type=str,
+        default='input.png',
+        metavar='FILE',
+        help='Input render image filename (default: input.png)'
+    )
+    
+    return parser.parse_args()
+
+
+def estimate_runtime_and_confirm(file_count):
+    """Estimate runtime and ask for confirmation if it exceeds 5 minutes."""
+    # Rough estimate: ~0.02 seconds per file (can vary based on system)
+    estimated_seconds = file_count * 0.02
+    estimated_minutes = estimated_seconds / 60
+    
+    if estimated_minutes > 5:
+        hours = int(estimated_minutes // 60)
+        minutes = int(estimated_minutes % 60)
+        
+        if hours > 0:
+            time_str = f"{hours}h {minutes}m"
+        else:
+            time_str = f"{int(estimated_minutes)}m"
+        
+        print(f"\n⚠️  WARNING: Expected runtime is approximately {time_str}")
+        print(f"   Processing {file_count:,} files may take a while.")
+        
+        response = input("   Do you want to continue? [y/N]: ").strip().lower()
+        
+        if response not in ['y', 'yes']:
+            print("\n❌ Operation cancelled by user.")
+            sys.exit(0)
+        print()
+
+
 if __name__ == "__main__":
+    # Parse command line arguments
+    args = parse_arguments()
+    
     # Start timing
     start_time = time.time()
+    
+    # Update paths based on arguments
+    if args.path:
+        SKIN_ROOT_DIR = os.path.abspath(args.path)
+        if not os.path.exists(SKIN_ROOT_DIR):
+            print(f"❌ ERROR: Specified path does not exist: {SKIN_ROOT_DIR}")
+            sys.exit(1)
+        if not os.path.isdir(SKIN_ROOT_DIR):
+            print(f"❌ ERROR: Specified path is not a directory: {SKIN_ROOT_DIR}")
+            sys.exit(1)
+    
+    # Update input file if specified
+    if args.input != 'input.png':
+        TARGET_FILE_ABS_PATH = os.path.join(SCRIPT_DIR, args.input)
 
     # 1. Prepare Output Directory - Clear existing files and create if needed
     if os.path.exists(OUTPUT_DIR_ABS_PATH):
@@ -324,6 +409,14 @@ if __name__ == "__main__":
 
     else:
         print(f"Starting search recursively from: {SKIN_ROOT_DIR}")
+        
+        # Count files first for runtime estimation
+        print(f"\nCounting files for runtime estimation...")
+        file_count = sum(1 for _, _, files in os.walk(SKIN_ROOT_DIR) for _ in files)
+        print(f"Found {file_count:,} files to process.")
+        
+        # Estimate runtime and get confirmation if needed
+        estimate_runtime_and_confirm(file_count)
 
         # Run the search and get the top matches
         top_matches = find_closest_match(SKIN_ROOT_DIR, TARGET_FILE_ABS_PATH, show_top_n=5)
