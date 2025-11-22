@@ -34,12 +34,12 @@ BINS_PER_CHANNEL = 4
 HISTOGRAM_BINS = 256 // BINS_PER_CHANNEL
 
 # Matching algorithm weights (adjust these to tune matching behavior)
-WEIGHT_COLOR_HISTOGRAM = 0.50  # Color distribution - most important for skins
-WEIGHT_PERCEPTUAL_HASH = 0.35  # Structure similarity via hash
-WEIGHT_DOMINANT_COLORS = 0.15  # Dominant color matching
+WEIGHT_DOMINANT_COLORS = 0.55  # Dominant color matching - most important
+WEIGHT_COLOR_HISTOGRAM = 0.30  # Color distribution
+WEIGHT_PERCEPTUAL_HASH = 0.15  # Structure similarity via hash (less important for render vs flat)
 
-def extract_dominant_colors(img, n_colors=5):
-    """Extract the most dominant colors from an image."""
+def extract_dominant_colors(img, n_colors=12):
+    """Extract the most dominant colors from an image with weighted importance."""
     # Convert to RGB and get pixel data
     img_rgb = img.convert('RGB')
     pixels = np.array(img_rgb).reshape(-1, 3)
@@ -49,30 +49,53 @@ def extract_dominant_colors(img, n_colors=5):
         alpha = np.array(img)[:, :, 3].flatten()
         pixels = pixels[alpha > 128]  # Only consider non-transparent pixels
     
+    if len(pixels) == 0:
+        return np.array([[0, 0, 0]]), np.array([1.0])
+    
     # Simple color quantization using histogram
     from collections import Counter
-    # Round colors to reduce variation
-    pixels_rounded = (pixels // 32) * 32
+    # Finer quantization for better color matching
+    pixels_rounded = (pixels // 16) * 16
     color_counts = Counter(map(tuple, pixels_rounded))
     
-    # Get top N colors
-    dominant = [color for color, count in color_counts.most_common(n_colors)]
-    return np.array(dominant) if dominant else np.array([[0, 0, 0]])
+    # Get top N colors with their weights
+    top_colors = color_counts.most_common(n_colors)
+    if not top_colors:
+        return np.array([[0, 0, 0]]), np.array([1.0])
+    
+    total_pixels = sum(count for _, count in top_colors)
+    colors = np.array([color for color, _ in top_colors])
+    weights = np.array([count / total_pixels for _, count in top_colors])
+    
+    return colors, weights
 
-def color_palette_distance(colors1, colors2):
-    """Calculate distance between two color palettes."""
+def color_palette_distance(colors1, weights1, colors2, weights2):
+    """Calculate weighted distance between two color palettes."""
     if len(colors1) == 0 or len(colors2) == 0:
         return 1.0
     
-    # Calculate minimum distance for each color in colors1 to any color in colors2
-    distances = []
-    for c1 in colors1:
-        min_dist = min([np.linalg.norm(c1 - c2) for c2 in colors2])
-        distances.append(min_dist)
+    # For each color in palette 1, find best match in palette 2
+    # Weight by importance (frequency) of colors
+    total_distance = 0.0
+    
+    for i, c1 in enumerate(colors1):
+        # Find closest color in palette 2
+        min_dist = float('inf')
+        for j, c2 in enumerate(colors2):
+            # Calculate color distance in RGB space
+            dist = np.sqrt(np.sum((c1.astype(float) - c2.astype(float)) ** 2))
+            min_dist = min(min_dist, dist)
+        
+        # Weight by the importance of this color in palette 1
+        total_distance += min_dist * weights1[i]
     
     # Normalize by max possible distance (255*sqrt(3) for RGB)
-    avg_distance = np.mean(distances) / 441.67
-    return avg_distance
+    normalized_distance = total_distance / 441.67
+    
+    # Also penalize if palette sizes are very different (indicates different color diversity)
+    diversity_penalty = abs(len(colors1) - len(colors2)) / max(len(colors1), len(colors2)) * 0.2
+    
+    return min(normalized_distance + diversity_penalty, 1.0)
 
 def get_image_features(image_path):
     """Extract multiple features from an image for robust matching."""
@@ -102,8 +125,8 @@ def get_image_features(image_path):
         
         combined_histogram = np.concatenate([hist_r, hist_g, hist_b])
         
-        # 3. Dominant colors
-        dominant_colors = extract_dominant_colors(img, n_colors=8)
+        # 3. Dominant colors with weights
+        dominant_colors, color_weights = extract_dominant_colors(img, n_colors=12)
         
         return {
             'ahash': ahash,
@@ -111,6 +134,7 @@ def get_image_features(image_path):
             'dhash': dhash,
             'histogram': combined_histogram,
             'dominant_colors': dominant_colors,
+            'color_weights': color_weights,
             'image': img,
             'path': image_path
         }, None
@@ -137,10 +161,12 @@ def calculate_similarity(target_features, candidate_features):
         target_features['histogram'] - candidate_features['histogram']
     )
     
-    # 3. Dominant color palette distance
+    # 3. Weighted dominant color palette distance
     color_distance = color_palette_distance(
         target_features['dominant_colors'],
-        candidate_features['dominant_colors']
+        target_features['color_weights'],
+        candidate_features['dominant_colors'],
+        candidate_features['color_weights']
     )
     
     # Calculate weighted combined distance
