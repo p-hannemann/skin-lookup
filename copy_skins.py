@@ -67,7 +67,7 @@ class SkinCopierGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Skin Copier - Add .png Extension")
-        self.root.geometry("600x400")
+        self.root.geometry("600x415")
         self.root.resizable(True, True)
         self.is_processing = False
         self.should_cancel = False
@@ -93,6 +93,14 @@ class SkinCopierGUI:
         info_label = tk.Label(frame_input, text="Output will be created as: [input_folder]_png", 
                              fg="gray", font=("Arial", 9))
         info_label.pack(anchor=tk.W)
+        
+        # Merge files toggle
+        self.merge_files = tk.BooleanVar(value=False)
+        merge_check = tk.Checkbutton(frame_input, 
+                                     text="Merge all files into single folder (no subdirectories)",
+                                     variable=self.merge_files,
+                                     font=("Arial", 9))
+        merge_check.pack(anchor=tk.W, pady=(5, 0))
         
         # Buttons frame
         btn_frame = tk.Frame(root)
@@ -123,12 +131,40 @@ class SkinCopierGUI:
                                                   font=("Consolas", 9),
                                                   state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Footer with credits
+        footer_frame = tk.Frame(root, padx=10, pady=5)
+        footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        
+        credits_label = tk.Label(footer_frame, 
+                                text="☕ Made by SoulReturns", 
+                                font=("Arial", 9),
+                                fg="gray")
+        credits_label.pack(side=tk.LEFT)
+        
+        discord_label = tk.Label(footer_frame, 
+                                text="Discord: soulreturns", 
+                                font=("Arial", 9),
+                                fg="#5865F2",
+                                cursor="hand2")
+        discord_label.pack(side=tk.RIGHT)
+        discord_label.bind("<Button-1>", lambda e: self.open_discord())
     
     def browse_folder(self):
         initial_dir = os.getcwd()
         folder = filedialog.askdirectory(title="Select Input Folder", initialdir=initial_dir)
         if folder:
             self.folder_path.set(folder)
+    
+    def open_discord(self):
+        import webbrowser
+        # Try to copy username to clipboard
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append("soulreturns")
+            messagebox.showinfo("Discord", "Discord username 'soulreturns' copied to clipboard!")
+        except:
+            messagebox.showinfo("Discord", "Discord username: soulreturns")
     
     def log(self, message):
         self.log_text.config(state=tk.NORMAL)
@@ -222,6 +258,7 @@ class SkinCopierGUI:
         input_path = Path(input_dir)
         output_dir = f"{input_dir}_png"
         output_path = Path(output_dir)
+        merge_mode = self.merge_files.get()
         
         # Check if input directory exists
         if not input_path.exists():
@@ -235,19 +272,27 @@ class SkinCopierGUI:
         # Create output directory if it doesn't exist
         output_path.mkdir(parents=True, exist_ok=True)
         
+        if merge_mode:
+            self.log("Merge mode: All files will be copied to a single folder.\n")
+        
         file_count = 0
+        file_name_counter = {}  # Track duplicate filenames when merging
+        
         # Walk through the input directory
         for root, dirs, files in os.walk(input_path):
             # Check for cancellation
             if self.should_cancel:
                 return False
             
-            # Calculate relative path from input directory
-            rel_path = Path(root).relative_to(input_path)
-            current_output_dir = output_path / rel_path
-            
-            # Create subdirectories in output
-            current_output_dir.mkdir(parents=True, exist_ok=True)
+            if merge_mode:
+                # Merge mode: all files go to root output directory
+                current_output_dir = output_path
+            else:
+                # Normal mode: preserve directory structure
+                rel_path = Path(root).relative_to(input_path)
+                current_output_dir = output_path / rel_path
+                # Create subdirectories in output
+                current_output_dir.mkdir(parents=True, exist_ok=True)
             
             # Copy and rename files
             for file in files:
@@ -256,7 +301,19 @@ class SkinCopierGUI:
                     return False
                 
                 src_file = Path(root) / file
-                dst_file = current_output_dir / (file + '.png')
+                
+                if merge_mode:
+                    # Handle potential duplicate filenames
+                    base_name = file
+                    if base_name in file_name_counter:
+                        file_name_counter[base_name] += 1
+                        # Add counter before .png extension
+                        dst_file = current_output_dir / f"{base_name}_{file_name_counter[base_name]}.png"
+                    else:
+                        file_name_counter[base_name] = 0
+                        dst_file = current_output_dir / (base_name + '.png')
+                else:
+                    dst_file = current_output_dir / (file + '.png')
                 
                 try:
                     shutil.copy2(src_file, dst_file)
@@ -267,7 +324,8 @@ class SkinCopierGUI:
                     self.log(f"Error copying {src_file}: {e}")
         
         if not self.should_cancel:
-            self.log(f"\nCompleted! {file_count} files copied from '{input_dir}' to '{output_dir}' with .png extension added.")
+            mode_text = " (merged)" if merge_mode else ""
+            self.log(f"\nCompleted! {file_count} files copied{mode_text} from '{input_dir}' to '{output_dir}' with .png extension added.")
         return True
 
 
