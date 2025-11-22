@@ -9,7 +9,7 @@ import numpy as np
 SKIN_ROOT_DIR_RELATIVE = "skins"
 
 # The target render image, RELATIVE to the script.
-TARGET_RENDER_FILE = "skin.png"
+TARGET_RENDER_FILE = "input.png"
 
 # NEW: The folder where the best match will be copied.
 OUTPUT_DIR_RELATIVE = "output"
