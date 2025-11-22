@@ -186,15 +186,11 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
     print(f"Weights: Hash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, Colors={WEIGHT_DOMINANT_COLORS}\n")
 
     # Second pass: Process all files
-    for file_path in all_files:
+    for idx, file_path in enumerate(all_files, 1):
         candidate_features, error = get_image_features(file_path)
 
         if candidate_features is not None:
             processed_files += 1
-
-            if processed_files % 1000 == 0:
-                print(f"Progress: {processed_files}/{total_files} processed ({skipped_files} skipped)")
-
             distance, metrics = calculate_similarity(target_features, candidate_features)
 
             # Keep track of top N matches
@@ -208,8 +204,16 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
                 best_metrics = metrics
         else:
             skipped_files += 1
+        
+        # Update progress bar
+        if idx % 100 == 0 or idx == total_files:
+            percent = (idx / total_files) * 100
+            bar_length = 50
+            filled = int(bar_length * idx / total_files)
+            bar = '█' * filled + '░' * (bar_length - filled)
+            print(f"\r[{bar}] {percent:.1f}% ({idx}/{total_files}) | Processed: {processed_files} | Skipped: {skipped_files}", end='', flush=True)
 
-    print("\n" + "="*70)
+    print("\n\n" + "="*70)
     print("--- SEARCH RESULTS ---")
     print("="*70)
     print(f"Total files: {total_files}")
