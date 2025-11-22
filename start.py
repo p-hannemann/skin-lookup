@@ -34,135 +34,112 @@ BINS_PER_CHANNEL = 4
 HISTOGRAM_BINS = 256 // BINS_PER_CHANNEL
 
 # Matching algorithm weights (adjust these to tune matching behavior)
-WEIGHT_DOMINANT_COLORS = 0.55  # Dominant color matching - most important
-WEIGHT_COLOR_HISTOGRAM = 0.30  # Color distribution
-WEIGHT_PERCEPTUAL_HASH = 0.15  # Structure similarity via hash (less important for render vs flat)
+WEIGHT_DOMINANT_COLORS = 0.60  # Dominant color matching - most important
+WEIGHT_COLOR_HISTOGRAM = 0.35  # Color distribution
+WEIGHT_PERCEPTUAL_HASH = 0.05  # Structure similarity via hash (less important for render vs flat)
 
-def extract_dominant_colors(img, n_colors=12):
-    """Extract the most dominant colors from an image with weighted importance."""
-    # Convert to RGB and get pixel data
-    img_rgb = img.convert('RGB')
-    pixels = np.array(img_rgb).reshape(-1, 3)
+def extract_dominant_colors_fast(img_array, n_colors=12):
+    """Fast extraction of dominant colors using numpy - balanced accuracy."""
+    # Finer quantization for better color accuracy
+    pixels_quantized = (img_array // 16) * 16  # Better color precision
+    pixels_flat = pixels_quantized.reshape(-1, 3)
     
-    # Remove near-transparent pixels if the image has alpha
-    if img.mode == 'RGBA':
-        alpha = np.array(img)[:, :, 3].flatten()
-        pixels = pixels[alpha > 128]  # Only consider non-transparent pixels
+    # Convert to single values for faster unique counting
+    pixel_codes = (pixels_flat[:, 0] << 16) | (pixels_flat[:, 1] << 8) | pixels_flat[:, 2]
     
-    if len(pixels) == 0:
-        return np.array([[0, 0, 0]]), np.array([1.0])
+    # Count unique colors
+    unique_codes, counts = np.unique(pixel_codes, return_counts=True)
     
-    # Simple color quantization using histogram
-    from collections import Counter
-    # Finer quantization for better color matching
-    pixels_rounded = (pixels // 16) * 16
-    color_counts = Counter(map(tuple, pixels_rounded))
+    # Get top N
+    top_indices = np.argsort(counts)[-n_colors:][::-1]
+    top_codes = unique_codes[top_indices]
+    top_counts = counts[top_indices]
     
-    # Get top N colors with their weights
-    top_colors = color_counts.most_common(n_colors)
-    if not top_colors:
-        return np.array([[0, 0, 0]]), np.array([1.0])
+    # Decode back to RGB
+    colors = np.zeros((len(top_codes), 3), dtype=np.uint8)
+    colors[:, 0] = (top_codes >> 16) & 0xFF
+    colors[:, 1] = (top_codes >> 8) & 0xFF
+    colors[:, 2] = top_codes & 0xFF
     
-    total_pixels = sum(count for _, count in top_colors)
-    colors = np.array([color for color, _ in top_colors])
-    weights = np.array([count / total_pixels for _, count in top_colors])
+    weights = top_counts / top_counts.sum()
     
     return colors, weights
 
-def color_palette_distance(colors1, weights1, colors2, weights2):
-    """Calculate weighted distance between two color palettes."""
+def color_palette_distance_fast(colors1, weights1, colors2, weights2):
+    """Fast weighted distance between color palettes using vectorized operations."""
     if len(colors1) == 0 or len(colors2) == 0:
         return 1.0
     
-    # For each color in palette 1, find best match in palette 2
-    # Weight by importance (frequency) of colors
-    total_distance = 0.0
+    # Vectorized distance calculation
+    # Compute all pairwise distances at once
+    c1 = colors1.astype(float)
+    c2 = colors2.astype(float)
     
-    for i, c1 in enumerate(colors1):
-        # Find closest color in palette 2
-        min_dist = float('inf')
-        for j, c2 in enumerate(colors2):
-            # Calculate color distance in RGB space
-            dist = np.sqrt(np.sum((c1.astype(float) - c2.astype(float)) ** 2))
-            min_dist = min(min_dist, dist)
-        
-        # Weight by the importance of this color in palette 1
-        total_distance += min_dist * weights1[i]
+    # Broadcasting: (n1, 1, 3) - (1, n2, 3) = (n1, n2, 3)
+    diffs = c1[:, np.newaxis, :] - c2[np.newaxis, :, :]
+    distances = np.sqrt(np.sum(diffs ** 2, axis=2))
     
-    # Normalize by max possible distance (255*sqrt(3) for RGB)
-    normalized_distance = total_distance / 441.67
+    # For each color in palette 1, find minimum distance to palette 2
+    min_distances = np.min(distances, axis=1)
     
-    # Also penalize if palette sizes are very different (indicates different color diversity)
-    diversity_penalty = abs(len(colors1) - len(colors2)) / max(len(colors1), len(colors2)) * 0.2
+    # Weight by color importance
+    weighted_distance = np.sum(min_distances * weights1)
     
-    return min(normalized_distance + diversity_penalty, 1.0)
+    # Normalize
+    return min(weighted_distance / 441.67, 1.0)
 
 def get_image_features(image_path):
-    """Extract multiple features from an image for robust matching."""
+    """Extract multiple features from an image - balanced speed and accuracy."""
     try:
-        # Load image
-        img = Image.open(image_path).convert('RGBA')
+        # Load image once
+        img = Image.open(image_path)
         
-        # 1. Average hash - better for different perspectives than pHash
-        # Using multiple hash types for robustness
-        ahash = imagehash.average_hash(img, hash_size=12)
-        phash = imagehash.phash(img, hash_size=12)
-        dhash = imagehash.dhash(img, hash_size=12)
+        # Hash for basic structure (keep it simple)
+        ahash = imagehash.average_hash(img, hash_size=8)
         
-        # 2. Enhanced color histogram with separate channels
-        img_rgb = img.convert('RGB')
-        pixels = np.array(img_rgb)
+        # Work directly with array
+        img_array = np.array(img.convert('RGB'))
         
-        # Calculate per-channel histograms
-        hist_r, _ = np.histogram(pixels[:, :, 0].flatten(), bins=32, range=[0, 256])
-        hist_g, _ = np.histogram(pixels[:, :, 1].flatten(), bins=32, range=[0, 256])
-        hist_b, _ = np.histogram(pixels[:, :, 2].flatten(), bins=32, range=[0, 256])
+        # Better histogram - more bins for accuracy but still optimized
+        hist, _ = np.histogramdd(
+            img_array.reshape(-1, 3),
+            bins=(24, 24, 24),  # Increased from 16 for better color distinction
+            range=[(0, 256), (0, 256), (0, 256)]
+        )
         
-        # Normalize each channel separately
-        hist_r = hist_r.astype(np.float64) / (np.sum(hist_r) + 1e-10)
-        hist_g = hist_g.astype(np.float64) / (np.sum(hist_g) + 1e-10)
-        hist_b = hist_b.astype(np.float64) / (np.sum(hist_b) + 1e-10)
+        # Flatten and normalize
+        hist = hist.flatten()
+        hist = hist / (hist.sum() + 1e-10)
         
-        combined_histogram = np.concatenate([hist_r, hist_g, hist_b])
-        
-        # 3. Dominant colors with weights
-        dominant_colors, color_weights = extract_dominant_colors(img, n_colors=12)
+        # More dominant colors for better matching
+        dominant_colors, color_weights = extract_dominant_colors_fast(img_array, n_colors=12)
         
         return {
             'ahash': ahash,
-            'phash': phash,
-            'dhash': dhash,
-            'histogram': combined_histogram,
+            'histogram': hist,
             'dominant_colors': dominant_colors,
             'color_weights': color_weights,
-            'image': img,
             'path': image_path
         }, None
 
     except FileNotFoundError:
-        return None, "File not found (Path error)"
+        return None, "File not found"
     except Exception as e:
-        return None, f"Error: {type(e).__name__} - {e}"
+        return None, f"Error: {type(e).__name__}"
 
 def calculate_similarity(target_features, candidate_features):
-    """Calculate a weighted similarity score between two images.
-    Returns a score where LOWER is better (distance metric)."""
+    """Calculate a weighted similarity score - balanced speed and accuracy."""
     
-    # 1. Multiple hash comparison for different aspects
-    ahash_distance = float(target_features['ahash'] - candidate_features['ahash']) / 144.0  # 12x12
-    phash_distance = float(target_features['phash'] - candidate_features['phash']) / 144.0  # 12x12
-    dhash_distance = float(target_features['dhash'] - candidate_features['dhash']) / 144.0  # 12x12
+    # 1. Single hash comparison
+    hash_distance = float(target_features['ahash'] - candidate_features['ahash']) / 64.0  # 8x8
     
-    # Average hash distances
-    avg_hash_distance = (ahash_distance + phash_distance + dhash_distance) / 3.0
+    # 2. Chi-squared distance for histograms (better for color matching than euclidean)
+    hist1 = target_features['histogram']
+    hist2 = candidate_features['histogram']
+    hist_distance = np.sum((hist1 - hist2) ** 2 / (hist1 + hist2 + 1e-10)) / 2
     
-    # 2. Enhanced histogram distance (already normalized)
-    hist_distance = np.linalg.norm(
-        target_features['histogram'] - candidate_features['histogram']
-    )
-    
-    # 3. Weighted dominant color palette distance
-    color_distance = color_palette_distance(
+    # 3. Weighted color palette distance with better normalization
+    color_distance = color_palette_distance_fast(
         target_features['dominant_colors'],
         target_features['color_weights'],
         candidate_features['dominant_colors'],
@@ -171,13 +148,13 @@ def calculate_similarity(target_features, candidate_features):
     
     # Calculate weighted combined distance
     combined_distance = (
-        WEIGHT_PERCEPTUAL_HASH * avg_hash_distance +
+        WEIGHT_PERCEPTUAL_HASH * hash_distance +
         WEIGHT_COLOR_HISTOGRAM * hist_distance +
         WEIGHT_DOMINANT_COLORS * color_distance
     )
     
     return combined_distance, {
-        'hash_dist': avg_hash_distance * 144,  # Convert back for display
+        'hash_dist': hash_distance * 64,
         'hist_dist': hist_distance,
         'color_dist': color_distance,
         'combined': combined_distance
@@ -212,10 +189,10 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5, skip_confir
     skipped_files = 0
     top_matches = []  # Store top N matches
 
-    print(f"\nStarting multi-metric comparison...")
+    print(f"\nStarting optimized comparison...")
     print(f"Weights: Hash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, Colors={WEIGHT_DOMINANT_COLORS}\n")
 
-    # Process all files sequentially (simple and memory-efficient)
+    # Process sequentially with optimized algorithms
     comparison_start_time = time.time()
     for idx, file_path in enumerate(all_files, 1):
         candidate_features, error = get_image_features(file_path)
