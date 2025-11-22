@@ -446,9 +446,10 @@ class ImageViewerWindow:
         self.show_current_image()
     
     def setup_ui(self):
-        # Top info bar
-        info_frame = tk.Frame(self.window, bg="#f0f0f0", padx=10, pady=5)
+        # Top info bar with fixed height
+        info_frame = tk.Frame(self.window, bg="#f0f0f0", padx=10, pady=5, height=40)
         info_frame.pack(fill=tk.X)
+        info_frame.pack_propagate(False)  # Prevent frame from shrinking
         
         self.filename_label = tk.Label(info_frame, text="", font=("Arial", 10, "bold"), bg="#f0f0f0")
         self.filename_label.pack(side=tk.LEFT)
@@ -465,8 +466,8 @@ class ImageViewerWindow:
         self.image_frame = tk.Frame(self.window, bg="gray")
         self.image_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.image_label = tk.Label(self.image_frame, bg="gray")
-        self.image_label.pack(expand=True)
+        self.image_label = tk.Label(self.image_frame, bg="gray", width=1, height=1)
+        self.image_label.pack(expand=True, fill=tk.BOTH)
         
         # Navigation buttons with fixed height
         nav_frame = tk.Frame(self.window, padx=10, pady=10, height=50)
@@ -546,12 +547,12 @@ class ImageViewerWindow:
             
             # Convert to PhotoImage
             photo = ImageTk.PhotoImage(img_resized)
-            self.image_label.config(image=photo)
+            self.image_label.config(image=photo, text="", compound=tk.CENTER)
             self.image_label.image = photo  # Keep a reference
             
         except Exception as e:
-            self.image_label.config(text=f"Error loading image:\n{e}", 
-                                   fg="red", font=("Arial", 10))
+            self.image_label.config(image="", text=f"Error loading image:\n{e}", 
+                                   fg="red", font=("Arial", 10), compound=tk.CENTER)
     
     def previous_image(self):
         """Show previous image."""
