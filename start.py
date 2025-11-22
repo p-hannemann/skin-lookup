@@ -185,7 +185,7 @@ def calculate_similarity(target_features, candidate_features):
         'combined': combined_distance
     }
 
-def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
+def find_closest_match(root_dir, target_file_abs_path, show_top_n=5, skip_confirmation=False):
     """Recursively searches for the best match using multiple similarity metrics."""
 
     target_features, error = get_image_features(target_file_abs_path)
@@ -202,6 +202,10 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
     
     total_files = len(all_files)
     print(f"Found {total_files:,} files to process.")
+    
+    # Estimate runtime using first file as benchmark (unless skipped)
+    if not skip_confirmation and total_files > 0:
+        estimate_runtime_and_confirm(target_features, all_files[0], total_files)
 
     best_match = None
     min_distance = float('inf')
@@ -329,11 +333,26 @@ Note: The script compares input.png (or specified image) against all skin files
     return parser.parse_args()
 
 
-def estimate_runtime_and_confirm(file_count):
-    """Estimate runtime and ask for confirmation if it exceeds 5 minutes."""
-    # Rough estimate: ~0.02 seconds per file (can vary based on system)
-    estimated_seconds = file_count * 0.02
+def estimate_runtime_and_confirm(target_features, test_file_path, file_count):
+    """Estimate runtime by benchmarking against a test file and ask for confirmation if it exceeds 5 minutes."""
+    print("   Running benchmark comparison...")
+    
+    # Time a single comparison
+    benchmark_start = time.time()
+    test_features, error = get_image_features(test_file_path)
+    
+    if test_features is not None:
+        calculate_similarity(target_features, test_features)
+        time_per_file = time.time() - benchmark_start
+    else:
+        # Fallback to rough estimate if benchmark fails
+        time_per_file = 0.02
+        print("   (Benchmark failed, using estimated time)")
+    
+    estimated_seconds = file_count * time_per_file
     estimated_minutes = estimated_seconds / 60
+    
+    print(f"   Benchmark: {time_per_file*1000:.1f}ms per file")
     
     if estimated_minutes > 5:
         hours = int(estimated_minutes // 60)
@@ -353,6 +372,8 @@ def estimate_runtime_and_confirm(file_count):
             print("\n❌ Operation cancelled by user.")
             sys.exit(0)
         print()
+    else:
+        print(f"   Estimated runtime: {int(estimated_seconds)}s\n")
 
 
 if __name__ == "__main__":
@@ -409,16 +430,8 @@ if __name__ == "__main__":
 
     else:
         print(f"Starting search recursively from: {SKIN_ROOT_DIR}")
-        
-        # Count files first for runtime estimation
-        print(f"\nCounting files for runtime estimation...")
-        file_count = sum(1 for _, _, files in os.walk(SKIN_ROOT_DIR) for _ in files)
-        print(f"Found {file_count:,} files to process.")
-        
-        # Estimate runtime and get confirmation if needed
-        estimate_runtime_and_confirm(file_count)
 
-        # Run the search and get the top matches
+        # Run the search and get the top matches (runtime estimation happens inside)
         top_matches = find_closest_match(SKIN_ROOT_DIR, TARGET_FILE_ABS_PATH, show_top_n=5)
 
         # 3. Copy all top matches if found
