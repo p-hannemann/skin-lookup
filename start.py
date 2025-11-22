@@ -33,43 +33,45 @@ BINS_PER_CHANNEL = 4
 HISTOGRAM_BINS = 256 // BINS_PER_CHANNEL
 
 # Matching algorithm weights (adjust these to tune matching behavior)
-WEIGHT_PERCEPTUAL_HASH = 0.40  # Structure similarity via hash
-WEIGHT_COLOR_HISTOGRAM = 0.30  # Color distribution
-WEIGHT_SSIM = 0.30             # Structural similarity
+WEIGHT_COLOR_HISTOGRAM = 0.50  # Color distribution - most important for skins
+WEIGHT_PERCEPTUAL_HASH = 0.35  # Structure similarity via hash
+WEIGHT_DOMINANT_COLORS = 0.15  # Dominant color matching
 
-def ssim(img1, img2):
-    """Calculate Structural Similarity Index between two images."""
-    # Convert images to grayscale numpy arrays
-    arr1 = np.array(img1.convert('L'), dtype=np.float64)
-    arr2 = np.array(img2.convert('L'), dtype=np.float64)
+def extract_dominant_colors(img, n_colors=5):
+    """Extract the most dominant colors from an image."""
+    # Convert to RGB and get pixel data
+    img_rgb = img.convert('RGB')
+    pixels = np.array(img_rgb).reshape(-1, 3)
     
-    # Resize to same dimensions if needed
-    if arr1.shape != arr2.shape:
-        img2_resized = img2.resize(img1.size, Image.LANCZOS)
-        arr2 = np.array(img2_resized.convert('L'), dtype=np.float64)
+    # Remove near-transparent pixels if the image has alpha
+    if img.mode == 'RGBA':
+        alpha = np.array(img)[:, :, 3].flatten()
+        pixels = pixels[alpha > 128]  # Only consider non-transparent pixels
     
-    # Constants for stability
-    C1 = (0.01 * 255) ** 2
-    C2 = (0.03 * 255) ** 2
+    # Simple color quantization using histogram
+    from collections import Counter
+    # Round colors to reduce variation
+    pixels_rounded = (pixels // 32) * 32
+    color_counts = Counter(map(tuple, pixels_rounded))
     
-    # Calculate means
-    mu1 = uniform_filter(arr1, size=11)
-    mu2 = uniform_filter(arr2, size=11)
+    # Get top N colors
+    dominant = [color for color, count in color_counts.most_common(n_colors)]
+    return np.array(dominant) if dominant else np.array([[0, 0, 0]])
+
+def color_palette_distance(colors1, colors2):
+    """Calculate distance between two color palettes."""
+    if len(colors1) == 0 or len(colors2) == 0:
+        return 1.0
     
-    # Calculate variances and covariance
-    mu1_sq = mu1 ** 2
-    mu2_sq = mu2 ** 2
-    mu1_mu2 = mu1 * mu2
+    # Calculate minimum distance for each color in colors1 to any color in colors2
+    distances = []
+    for c1 in colors1:
+        min_dist = min([np.linalg.norm(c1 - c2) for c2 in colors2])
+        distances.append(min_dist)
     
-    sigma1_sq = uniform_filter(arr1 ** 2, size=11) - mu1_sq
-    sigma2_sq = uniform_filter(arr2 ** 2, size=11) - mu2_sq
-    sigma12 = uniform_filter(arr1 * arr2, size=11) - mu1_mu2
-    
-    # Calculate SSIM
-    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
-               ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-    
-    return np.mean(ssim_map)
+    # Normalize by max possible distance (255*sqrt(3) for RGB)
+    avg_distance = np.mean(distances) / 441.67
+    return avg_distance
 
 def get_image_features(image_path):
     """Extract multiple features from an image for robust matching."""
@@ -77,21 +79,37 @@ def get_image_features(image_path):
         # Load image
         img = Image.open(image_path).convert('RGBA')
         
-        # 1. Perceptual hash (captures structure)
-        phash = imagehash.phash(img, hash_size=16)
+        # 1. Average hash - better for different perspectives than pHash
+        # Using multiple hash types for robustness
+        ahash = imagehash.average_hash(img, hash_size=12)
+        phash = imagehash.phash(img, hash_size=12)
+        dhash = imagehash.dhash(img, hash_size=12)
         
-        # 2. Color histogram (captures color distribution)
+        # 2. Enhanced color histogram with separate channels
         img_rgb = img.convert('RGB')
-        histogram, _ = np.histogram(
-            np.array(img_rgb).flatten(),
-            bins=HISTOGRAM_BINS * 3,
-            range=[0, 256]
-        )
-        normalized_histogram = histogram.astype(np.float64) / np.sum(histogram)
+        pixels = np.array(img_rgb)
+        
+        # Calculate per-channel histograms
+        hist_r, _ = np.histogram(pixels[:, :, 0].flatten(), bins=32, range=[0, 256])
+        hist_g, _ = np.histogram(pixels[:, :, 1].flatten(), bins=32, range=[0, 256])
+        hist_b, _ = np.histogram(pixels[:, :, 2].flatten(), bins=32, range=[0, 256])
+        
+        # Normalize each channel separately
+        hist_r = hist_r.astype(np.float64) / (np.sum(hist_r) + 1e-10)
+        hist_g = hist_g.astype(np.float64) / (np.sum(hist_g) + 1e-10)
+        hist_b = hist_b.astype(np.float64) / (np.sum(hist_b) + 1e-10)
+        
+        combined_histogram = np.concatenate([hist_r, hist_g, hist_b])
+        
+        # 3. Dominant colors
+        dominant_colors = extract_dominant_colors(img, n_colors=8)
         
         return {
+            'ahash': ahash,
             'phash': phash,
-            'histogram': normalized_histogram,
+            'dhash': dhash,
+            'histogram': combined_histogram,
+            'dominant_colors': dominant_colors,
             'image': img,
             'path': image_path
         }, None
@@ -105,31 +123,36 @@ def calculate_similarity(target_features, candidate_features):
     """Calculate a weighted similarity score between two images.
     Returns a score where LOWER is better (distance metric)."""
     
-    # 1. Perceptual hash distance (0 = identical, higher = more different)
-    phash_distance = float(target_features['phash'] - candidate_features['phash'])
-    # Normalize to 0-1 range (max hamming distance for 16x16 hash is 256)
-    phash_distance_norm = phash_distance / 256.0
+    # 1. Multiple hash comparison for different aspects
+    ahash_distance = float(target_features['ahash'] - candidate_features['ahash']) / 144.0  # 12x12
+    phash_distance = float(target_features['phash'] - candidate_features['phash']) / 144.0  # 12x12
+    dhash_distance = float(target_features['dhash'] - candidate_features['dhash']) / 144.0  # 12x12
     
-    # 2. Histogram distance (0 = identical, higher = more different)
+    # Average hash distances
+    avg_hash_distance = (ahash_distance + phash_distance + dhash_distance) / 3.0
+    
+    # 2. Enhanced histogram distance (already normalized)
     hist_distance = np.linalg.norm(
         target_features['histogram'] - candidate_features['histogram']
     )
     
-    # 3. SSIM (returns 0-1 where 1 is identical, so we invert it)
-    ssim_value = ssim(target_features['image'], candidate_features['image'])
-    ssim_distance = 1.0 - ssim_value  # Convert to distance metric
+    # 3. Dominant color palette distance
+    color_distance = color_palette_distance(
+        target_features['dominant_colors'],
+        candidate_features['dominant_colors']
+    )
     
     # Calculate weighted combined distance
     combined_distance = (
-        WEIGHT_PERCEPTUAL_HASH * phash_distance_norm +
+        WEIGHT_PERCEPTUAL_HASH * avg_hash_distance +
         WEIGHT_COLOR_HISTOGRAM * hist_distance +
-        WEIGHT_SSIM * ssim_distance
+        WEIGHT_DOMINANT_COLORS * color_distance
     )
     
     return combined_distance, {
-        'phash_dist': phash_distance,
+        'hash_dist': avg_hash_distance * 144,  # Convert back for display
         'hist_dist': hist_distance,
-        'ssim_value': ssim_value,
+        'color_dist': color_distance,
         'combined': combined_distance
     }
 
@@ -158,8 +181,8 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
     skipped_files = 0
     top_matches = []  # Store top N matches
 
-    print(f"Starting multi-metric comparison...")
-    print(f"Weights: pHash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, SSIM={WEIGHT_SSIM}\n")
+    print(f"\nStarting multi-metric comparison...")
+    print(f"Weights: Hash={WEIGHT_PERCEPTUAL_HASH}, Histogram={WEIGHT_COLOR_HISTOGRAM}, Colors={WEIGHT_DOMINANT_COLORS}\n")
 
     # Second pass: Process all files
     for file_path in all_files:
@@ -196,17 +219,17 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
         print(f"🏆 BEST MATCH: {os.path.basename(best_match)}")
         print(f"   Path: {best_match}")
         print(f"   Combined Distance: {best_metrics['combined']:.6f} (Lower is better)")
-        print(f"   - Perceptual Hash Distance: {best_metrics['phash_dist']:.1f} bits different")
+        print(f"   - Hash Distance: {best_metrics['hash_dist']:.1f} bits different")
         print(f"   - Histogram Distance: {best_metrics['hist_dist']:.6f}")
-        print(f"   - SSIM Score: {best_metrics['ssim_value']:.4f} (1.0 = identical)")
+        print(f"   - Color Palette Distance: {best_metrics['color_dist']:.4f}")
         
         if show_top_n > 1 and len(top_matches) > 1:
             print(f"\n📊 Top {len(top_matches)} Matches:")
             for i, (dist, path, metrics) in enumerate(top_matches, 1):
                 print(f"\n{i}. {os.path.basename(path)}")
                 print(f"   Combined: {metrics['combined']:.6f} | "
-                      f"pHash: {metrics['phash_dist']:.1f} | "
-                      f"SSIM: {metrics['ssim_value']:.4f}")
+                      f"Hash: {metrics['hash_dist']:.1f} | "
+                      f"Colors: {metrics['color_dist']:.4f}")
         
         print("="*70)
         return top_matches  # Return all top matches instead of just best
@@ -272,7 +295,7 @@ if __name__ == "__main__":
                     # copy2 preserves metadata like modification times
                     shutil.copy2(match_path, dest_file_abs_path)
                     print(f"✅ Match #{i}: {dest_filename}")
-                    print(f"   Distance: {distance:.6f} | SSIM: {metrics['ssim_value']:.4f}")
+                    print(f"   Distance: {distance:.6f} | Hash: {metrics['hash_dist']:.1f} | Colors: {metrics['color_dist']:.4f}")
                 except Exception as e:
                     print(f"❌ ERROR copying match #{i}: {e}")
             
