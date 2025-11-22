@@ -5,6 +5,7 @@ import numpy as np
 import imagehash
 from scipy.ndimage import uniform_filter
 from scipy.ndimage import variance
+import time
 
 # --- USER CONFIGURATION (Simple Relative Paths) ---
 
@@ -239,6 +240,8 @@ def find_closest_match(root_dir, target_file_abs_path, show_top_n=5):
 
 
 if __name__ == "__main__":
+    # Start timing
+    start_time = time.time()
 
     # 1. Prepare Output Directory - Clear existing files and create if needed
     if os.path.exists(OUTPUT_DIR_ABS_PATH):
@@ -302,3 +305,20 @@ if __name__ == "__main__":
             print(f"\n{'='*70}")
             print(f"✅ Copied {len(top_matches)} matches to: {OUTPUT_DIR_ABS_PATH}")
             print(f"{'='*70}")
+    
+    # Calculate and display total time
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    
+    if elapsed_time < 60:
+        time_str = f"{elapsed_time:.2f} seconds"
+    elif elapsed_time < 3600:
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+        time_str = f"{minutes}m {seconds:.1f}s"
+    else:
+        hours = int(elapsed_time // 3600)
+        minutes = int((elapsed_time % 3600) // 60)
+        time_str = f"{hours}h {minutes}m"
+    
+    print(f"\n⏱️  Total execution time: {time_str}")
