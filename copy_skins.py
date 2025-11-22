@@ -4,6 +4,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 import threading
+from PIL import Image, ImageTk
+import subprocess
 
 
 def copy_and_rename_to_png(input_dir, log_callback=None):
@@ -72,6 +74,7 @@ class SkinCopierGUI:
         self.is_processing = False
         self.should_cancel = False
         self.current_output_dir = None
+        self.last_output_dir = None
         
         # Input folder selection
         frame_input = tk.Frame(root, padx=10, pady=10)
@@ -121,6 +124,17 @@ class SkinCopierGUI:
                                     state=tk.DISABLED)
         self.cancel_btn.pack(side=tk.LEFT, padx=5)
         
+        self.viewer_btn = tk.Button(btn_frame, text="View Images", 
+                                    command=self.open_image_viewer, 
+                                    font=("Arial", 11, "bold"),
+                                    bg="#2196F3", fg="white",
+                                    padx=20, pady=10)
+        self.viewer_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Check for existing output directory on startup
+        self.check_for_existing_output()
+        self.update_viewer_button_state()
+        
         # Log area
         log_frame = tk.Frame(root, padx=10, pady=5)
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -155,6 +169,8 @@ class SkinCopierGUI:
         folder = filedialog.askdirectory(title="Select Input Folder", initialdir=initial_dir)
         if folder:
             self.folder_path.set(folder)
+            self.check_for_existing_output()
+            self.update_viewer_button_state()
     
     def open_discord(self):
         import webbrowser
@@ -165,6 +181,41 @@ class SkinCopierGUI:
             messagebox.showinfo("Discord", "Discord username 'soulreturns' copied to clipboard!")
         except:
             messagebox.showinfo("Discord", "Discord username: soulreturns")
+    
+    def check_for_existing_output(self):
+        """Check if output directory exists for current input folder."""
+        folder = self.folder_path.get()
+        if folder:
+            potential_output = f"{folder}_png"
+            if os.path.exists(potential_output) and os.path.isdir(potential_output):
+                self.last_output_dir = potential_output
+    
+    def update_viewer_button_state(self):
+        """Update the viewer button text and state based on available directories."""
+        if self.last_output_dir and os.path.exists(self.last_output_dir):
+            self.viewer_btn.config(text="View Output Images", state=tk.NORMAL)
+        elif self.folder_path.get() and os.path.exists(self.folder_path.get()):
+            self.viewer_btn.config(text="View Input Images", state=tk.NORMAL)
+        else:
+            self.viewer_btn.config(text="View Images", state=tk.DISABLED)
+    
+    def open_image_viewer(self):
+        # Prefer output folder if available, otherwise use input folder
+        if self.last_output_dir and os.path.exists(self.last_output_dir):
+            folder = self.last_output_dir
+        else:
+            folder = self.folder_path.get()
+        
+        if not folder:
+            messagebox.showwarning("No Folder Selected", "Please select a folder to view images from.")
+            return
+        
+        if not os.path.exists(folder):
+            messagebox.showerror("Error", f"Folder does not exist: {folder}")
+            return
+        
+        # Open the image viewer
+        ImageViewerWindow(self.root, folder)
     
     def log(self, message):
         self.log_text.config(state=tk.NORMAL)
@@ -241,6 +292,8 @@ class SkinCopierGUI:
                     self.log(f"Error removing output directory: {e}")
                     messagebox.showerror("Error", f"Operation cancelled but failed to remove output directory:\n{e}")
             elif success:
+                self.last_output_dir = output_dir
+                self.update_viewer_button_state()
                 messagebox.showinfo("Success", f"Files copied successfully!\nOutput: {output_dir}")
             else:
                 messagebox.showerror("Error", "Failed to copy files. Check the log for details.")
@@ -327,6 +380,200 @@ class SkinCopierGUI:
             mode_text = " (merged)" if merge_mode else ""
             self.log(f"\nCompleted! {file_count} files copied{mode_text} from '{input_dir}' to '{output_dir}' with .png extension added.")
         return True
+
+
+class ImageViewerWindow:
+    def __init__(self, parent, directory):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Image Viewer - Loading...")
+        self.window.geometry("800x600")
+        
+        self.directory = directory
+        self.image_files = []
+        self.current_index = 0
+        self.loading = True
+        
+        # Setup UI first
+        self.setup_ui()
+        
+        # Show loading message
+        self.image_label.config(text="Loading images...\nPlease wait...", 
+                               fg="white", font=("Arial", 14, "bold"))
+        
+        # Collect images in background thread to avoid freezing
+        thread = threading.Thread(target=self.collect_images_background, daemon=True)
+        thread.start()
+    
+    def collect_images_background(self):
+        """Collect all image files from directory recursively in background."""
+        # Common image extensions, including files without extensions
+        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', ''}
+        temp_files = []
+        count = 0
+        
+        for root, dirs, files in os.walk(self.directory):
+            for file in files:
+                file_path = Path(root) / file
+                # Quick check: just verify extension, don't open every file
+                if file_path.suffix.lower() in image_extensions:
+                    temp_files.append(file_path)
+                    count += 1
+                    # Update progress every 100 files
+                    if count % 100 == 0:
+                        self.window.after(0, lambda c=count: self.update_loading_status(c))
+        
+        # Sort by path for consistent order
+        temp_files.sort()
+        self.image_files = temp_files
+        
+        # Notify completion on main thread
+        self.window.after(0, self.on_images_loaded)
+    
+    def update_loading_status(self, count):
+        """Update loading message with count."""
+        self.image_label.config(text=f"Loading images...\nFound {count} images so far...")
+    
+    def on_images_loaded(self):
+        """Called when image collection is complete."""
+        self.loading = False
+        
+        if not self.image_files:
+            messagebox.showinfo("No Images", "No image files found in the directory.")
+            self.window.destroy()
+            return
+        
+        self.window.title("Image Viewer")
+        self.show_current_image()
+    
+    def setup_ui(self):
+        # Top info bar
+        info_frame = tk.Frame(self.window, bg="#f0f0f0", padx=10, pady=5)
+        info_frame.pack(fill=tk.X)
+        
+        self.filename_label = tk.Label(info_frame, text="", font=("Arial", 10, "bold"), bg="#f0f0f0")
+        self.filename_label.pack(side=tk.LEFT)
+        
+        open_location_btn = tk.Button(info_frame, text="Open in Explorer", 
+                                      command=self.open_in_explorer,
+                                      font=("Arial", 9))
+        open_location_btn.pack(side=tk.RIGHT, padx=5)
+        
+        self.counter_label = tk.Label(info_frame, text="", font=("Arial", 9), bg="#f0f0f0")
+        self.counter_label.pack(side=tk.RIGHT, padx=10)
+        
+        # Image display area
+        self.image_frame = tk.Frame(self.window, bg="gray")
+        self.image_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        self.image_label = tk.Label(self.image_frame, bg="gray")
+        self.image_label.pack(expand=True)
+        
+        # Navigation buttons with fixed height
+        nav_frame = tk.Frame(self.window, padx=10, pady=10, height=50)
+        nav_frame.pack(fill=tk.X)
+        nav_frame.pack_propagate(False)  # Prevent frame from shrinking
+        
+        self.prev_btn = tk.Button(nav_frame, text="← Previous", 
+                                  command=self.previous_image,
+                                  font=("Arial", 10, "bold"),
+                                  width=15, pady=5)
+        self.prev_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.next_btn = tk.Button(nav_frame, text="Next →", 
+                                  command=self.next_image,
+                                  font=("Arial", 10, "bold"),
+                                  width=15, pady=5)
+        self.next_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Keyboard bindings
+        self.window.bind("<Left>", lambda e: self.previous_image())
+        self.window.bind("<Right>", lambda e: self.next_image())
+        
+        # Bind resize event to update image
+        self.window.bind("<Configure>", self.on_window_resize)
+        self.last_window_size = (self.window.winfo_width(), self.window.winfo_height())
+    
+    def on_window_resize(self, event):
+        """Handle window resize to rescale image."""
+        # Only update if the window size actually changed (not just move)
+        current_size = (self.window.winfo_width(), self.window.winfo_height())
+        if current_size != self.last_window_size:
+            self.last_window_size = current_size
+            # Delay the image update slightly to avoid too many updates during resize
+            if hasattr(self, '_resize_timer'):
+                self.window.after_cancel(self._resize_timer)
+            self._resize_timer = self.window.after(100, self.show_current_image)
+    
+    def show_current_image(self):
+        """Display the current image."""
+        if not self.image_files or self.loading:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        
+        # Update filename and counter
+        self.filename_label.config(text=image_path.name)
+        self.counter_label.config(text=f"{self.current_index + 1} / {len(self.image_files)}")
+        
+        # Update button states
+        self.prev_btn.config(state=tk.NORMAL if self.current_index > 0 else tk.DISABLED)
+        self.next_btn.config(state=tk.NORMAL if self.current_index < len(self.image_files) - 1 else tk.DISABLED)
+        
+        try:
+            # Load and display image
+            img = Image.open(image_path)
+            
+            # Get actual frame dimensions
+            self.window.update_idletasks()
+            frame_width = self.image_frame.winfo_width()
+            frame_height = self.image_frame.winfo_height()
+            
+            # Use default size if frame not yet drawn
+            if frame_width <= 1:
+                frame_width = 780
+            if frame_height <= 1:
+                frame_height = 420
+            
+            # Calculate scaling to fill the frame while maintaining aspect ratio
+            img_width, img_height = img.size
+            scale = min(frame_width / img_width, frame_height / img_height)
+            
+            # Scale up or down to fill the frame better
+            new_width = int(img_width * scale)
+            new_height = int(img_height * scale)
+            
+            img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage
+            photo = ImageTk.PhotoImage(img_resized)
+            self.image_label.config(image=photo)
+            self.image_label.image = photo  # Keep a reference
+            
+        except Exception as e:
+            self.image_label.config(text=f"Error loading image:\n{e}", 
+                                   fg="red", font=("Arial", 10))
+    
+    def previous_image(self):
+        """Show previous image."""
+        if self.current_index > 0:
+            self.current_index -= 1
+            self.show_current_image()
+    
+    def next_image(self):
+        """Show next image."""
+        if self.current_index < len(self.image_files) - 1:
+            self.current_index += 1
+            self.show_current_image()
+    
+    def open_in_explorer(self):
+        """Open Windows Explorer at the image location."""
+        if not self.image_files:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        
+        # Open explorer and select the file
+        subprocess.run(['explorer', '/select,', str(image_path.absolute())])
 
 
 if __name__ == "__main__":
