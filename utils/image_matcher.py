@@ -25,6 +25,7 @@ try:
     import torchvision.models as models
     import torchvision.transforms as transforms
     TORCH_AVAILABLE = True
+    print(f"[INFO] PyTorch {torch.__version__} loaded successfully (CUDA: {torch.cuda.is_available()})")
     
     # Initialize model globally to avoid reloading
     _ai_model = None
@@ -46,8 +47,9 @@ try:
             ])
         return _ai_model, _ai_transform
     
-except ImportError:
+except ImportError as e:
     TORCH_AVAILABLE = False
+    print(f"[WARNING] PyTorch import failed: {e}")
 
 
 # Algorithm weight configurations
@@ -185,10 +187,18 @@ def extract_edge_features(img):
 def extract_ai_features(img):
     """Extract deep learning features using pre-trained ResNet."""
     if not TORCH_AVAILABLE:
+        print("[DEBUG] extract_ai_features: TORCH_AVAILABLE is False")
         return None
     
     try:
         model, transform = _get_ai_model()
+        if model is None:
+            print("[DEBUG] extract_ai_features: model is None")
+            return None
+        
+        # Ensure image is RGB (not RGBA or grayscale)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
         
         # Transform image
         img_tensor = transform(img).unsqueeze(0)
@@ -203,14 +213,19 @@ def extract_ai_features(img):
         # Normalize
         features = features / (np.linalg.norm(features) + 1e-10)
         
+        print(f"[DEBUG] extract_ai_features: Successfully extracted {len(features)} features")
         return features
     except Exception as e:
+        print(f"[ERROR] extract_ai_features failed: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
 def calculate_ai_similarity(features1, features2):
     """Calculate cosine similarity between deep features."""
     if features1 is None or features2 is None:
+        print(f"[DEBUG] calculate_ai_similarity: features1={features1 is not None}, features2={features2 is not None}")
         return 1.0
     
     try:
@@ -218,8 +233,11 @@ def calculate_ai_similarity(features1, features2):
         similarity = np.dot(features1, features2)
         # Convert to distance (0 = identical, 1 = completely different)
         distance = (1.0 - similarity) / 2.0
-        return max(0.0, min(distance, 1.0))
-    except:
+        result = max(0.0, min(distance, 1.0))
+        print(f"[DEBUG] calculate_ai_similarity: similarity={similarity:.4f}, distance={result:.4f}")
+        return result
+    except Exception as e:
+        print(f"[ERROR] calculate_ai_similarity failed: {e}")
         return 1.0
 
 
@@ -306,12 +324,15 @@ def get_image_features(image_path, algorithm="balanced"):
         
         # AI Perceptual algorithm
         if algorithm == "ai_perceptual":
+            print(f"[DEBUG] get_image_features: algorithm=ai_perceptual, TORCH_AVAILABLE={TORCH_AVAILABLE}")
             if TORCH_AVAILABLE:
                 ai_features = extract_ai_features(img)
                 features['ai_features'] = ai_features
                 features['ai_available'] = ai_features is not None
+                print(f"[DEBUG] get_image_features: ai_features extracted, ai_available={features['ai_available']}")
             else:
                 features['ai_available'] = False
+                print("[DEBUG] get_image_features: TORCH_AVAILABLE is False, setting ai_available=False")
         
         return features, None
 
@@ -487,6 +508,7 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
     
     # AI Perceptual algorithm
     elif algorithm == "ai_perceptual":
+        print(f"[DEBUG] AI Perceptual: target ai_available={target_features.get('ai_available')}, candidate ai_available={candidate_features.get('ai_available')}")
         if target_features.get('ai_available') and candidate_features.get('ai_available'):
             # Deep learning features
             ai_distance = calculate_ai_similarity(
