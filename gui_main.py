@@ -8,6 +8,8 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 import threading
 from pathlib import Path
 import subprocess
+import urllib.request
+import io
 from PIL import Image, ImageTk
 
 from file_utils import copy_and_rename_to_png
@@ -25,6 +27,8 @@ class SkinCopierGUI:
         self.should_cancel = False
         self.current_output_dir = None
         self.last_output_dir = None
+        self.preview_window = None
+        self.example_image_url = "https://www.minecraftskins.com/uploads/preview-skins/2022/03/22/minos-inquisitor-20083594.png"
         
         # Modern color scheme
         self.colors = {
@@ -148,6 +152,22 @@ class SkinCopierGUI:
                                    cursor="hand2")
         browse_img_btn.pack(side=tk.RIGHT)
         self._add_button_hover(browse_img_btn, self.colors['primary'], '#ffffff')
+        
+        example_img_btn = tk.Button(img_frame, 
+                                    text="Example", 
+                                    command=self.load_example_image,
+                                    font=("Segoe UI", 9),
+                                    bg=self.colors['card'],
+                                    fg=self.colors['success'],
+                                    relief=tk.SOLID,
+                                    borderwidth=1,
+                                    padx=15,
+                                    pady=6,
+                                    cursor="hand2")
+        example_img_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self._add_button_hover(example_img_btn, self.colors['success'], '#ffffff')
+        example_img_btn.bind('<Enter>', self.show_example_preview)
+        example_img_btn.bind('<Leave>', self.hide_example_preview)
         
         # Search directory selection
         tk.Label(frame_input, 
@@ -440,6 +460,75 @@ class SkinCopierGUI:
         folder = filedialog.askdirectory(title="Select Search Directory", initialdir=initial_dir)
         if folder:
             self.search_dir_path.set(folder)
+    
+    def load_example_image(self):
+        """Download and save the example image to input folder."""
+        def download_task():
+            try:
+                self.matcher_log("Downloading example image...")
+                
+                # Create input folder if it doesn't exist
+                input_folder = Path("input")
+                input_folder.mkdir(exist_ok=True)
+                
+                # Download the image
+                with urllib.request.urlopen(self.example_image_url) as response:
+                    image_data = response.read()
+                
+                # Save to input folder
+                output_path = input_folder / "example_minos_inquisitor.png"
+                with open(output_path, 'wb') as f:
+                    f.write(image_data)
+                
+                # Set the path in the input field
+                self.input_image_path.set(str(output_path.absolute()))
+                self.matcher_log(f"Example image saved to: {output_path.absolute()}")
+                messagebox.showinfo("Success", f"Example image downloaded to:\n{output_path.absolute()}")
+                
+            except Exception as e:
+                self.matcher_log(f"Error downloading example image: {str(e)}")
+                messagebox.showerror("Error", f"Failed to download example image:\n{str(e)}")
+        
+        thread = threading.Thread(target=download_task, daemon=True)
+        thread.start()
+    
+    def show_example_preview(self, event):
+        """Show preview of example image on hover."""
+        try:
+            # Create preview window
+            self.preview_window = tk.Toplevel(self.root)
+            self.preview_window.overrideredirect(True)  # Remove window decorations
+            self.preview_window.attributes('-topmost', True)
+            
+            # Position near the button
+            x = event.widget.winfo_rootx() + event.widget.winfo_width() + 10
+            y = event.widget.winfo_rooty()
+            self.preview_window.geometry(f"+{x}+{y}")
+            
+            # Download and display preview
+            with urllib.request.urlopen(self.example_image_url) as response:
+                image_data = response.read()
+            
+            img = Image.open(io.BytesIO(image_data))
+            # Resize for preview (max 300x300)
+            img.thumbnail((300, 300), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            
+            label = tk.Label(self.preview_window, image=photo, bg='white', relief=tk.SOLID, borderwidth=2)
+            label.image = photo  # Keep a reference
+            label.pack()
+            
+        except Exception as e:
+            # If preview fails, just skip it
+            if self.preview_window:
+                self.preview_window.destroy()
+                self.preview_window = None
+    
+    def hide_example_preview(self, event):
+        """Hide the preview window."""
+        if self.preview_window:
+            self.preview_window.destroy()
+            self.preview_window = None
     
     def matcher_log(self, message):
         self.matcher_log_text.config(state=tk.NORMAL)
