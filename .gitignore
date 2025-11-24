@@ -1,10 +1,6 @@
-# Ignore everything
-*
-
-# Except start.py
-!start.py
-!copy_skins.py
-
-# GitHub workflows
-!.github/
-!.github/**
+/build
+/dist
+/input
+/output
+/skins
+/__pycache__
