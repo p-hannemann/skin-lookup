@@ -12,9 +12,10 @@ import urllib.request
 import io
 from PIL import Image, ImageTk
 
-from file_utils import copy_and_rename_to_png
-from skin_matcher import find_matching_skins, copy_skin_files
-from image_viewer import ImageViewerWindow
+from utils.file_utils import copy_and_rename_to_png
+from utils.skin_matcher import find_matching_skins, copy_skin_files
+from ui.image_viewer import ImageViewerWindow
+from config.styles import AppStyles
 
 
 class SkinCopierGUI:
@@ -30,39 +31,14 @@ class SkinCopierGUI:
         self.preview_window = None
         self.example_image_url = "https://www.minecraftskins.com/uploads/preview-skins/2022/03/22/minos-inquisitor-20083594.png"
         
-        # Modern color scheme
-        self.colors = {
-            'primary': '#2196F3',
-            'primary_dark': '#1976D2',
-            'success': '#4CAF50',
-            'success_dark': '#388E3C',
-            'danger': '#f44336',
-            'danger_dark': '#D32F2F',
-            'bg': '#f5f5f5',
-            'card': '#ffffff',
-            'text': '#212121',
-            'text_secondary': '#757575',
-            'border': '#e0e0e0'
-        }
+        # Use shared color scheme
+        self.colors = AppStyles.colors
         
         # Configure root background
         self.root.configure(bg=self.colors['bg'])
         
-        # Configure ttk styles
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure('TNotebook', background=self.colors['bg'], borderwidth=0, tabmargins=[0, 0, 0, 0])
-        style.configure('TNotebook.Tab', 
-                       padding=[20, 10], 
-                       font=('Segoe UI', 10),
-                       background=self.colors['card'],
-                       borderwidth=0,
-                       width=15)
-        style.map('TNotebook.Tab', 
-                 background=[('selected', self.colors['card']), ('!selected', self.colors['card'])],
-                 foreground=[('selected', self.colors['primary']), ('!selected', self.colors['text'])],
-                 borderwidth=[('selected', 0), ('!selected', 0)],
-                 padding=[('selected', [20, 10]), ('!selected', [20, 10])])
+        # Configure ttk styles using shared configuration
+        AppStyles.configure_ttk_styles()
         
         # Create notebook for tabs
         self.notebook = ttk.Notebook(root)
@@ -528,23 +504,8 @@ class SkinCopierGUI:
                 justify=tk.LEFT).pack(anchor=tk.W)
     
     def _add_button_hover(self, button, hover_bg, hover_fg=None, flat=False):
-        """Add hover effect to a button."""
-        original_bg = button.cget('bg')
-        original_fg = button.cget('fg')
-        
-        def on_enter(e):
-            if button['state'] != 'disabled':
-                button['bg'] = hover_bg
-                if hover_fg:
-                    button['fg'] = hover_fg
-        
-        def on_leave(e):
-            if button['state'] != 'disabled':
-                button['bg'] = original_bg
-                button['fg'] = original_fg
-        
-        button.bind("<Enter>", on_enter)
-        button.bind("<Leave>", on_leave)
+        """Add hover effect to a button. Delegates to AppStyles."""
+        AppStyles.add_button_hover(button, hover_bg, hover_fg)
     
     def browse_input_image(self):
         initial_dir = os.getcwd()
