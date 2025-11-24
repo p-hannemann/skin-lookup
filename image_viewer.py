@@ -40,6 +40,7 @@ class ImageViewerWindow:
             self.sort_method = tk.StringVar(value="path")  # Default sort
             self._updating_tree_selection = False  # Flag to prevent recursion
             self._last_programmatic_selection = None  # Track programmatic selections
+            self.subfolder_counter_label = None  # Will be set in setup_ui
             debug_print("Variables initialized")
         except Exception as e:
             debug_print(f"Error in __init__: {e}")
@@ -255,6 +256,25 @@ class ImageViewerWindow:
                 self.folder_tree.selection_set(tree_item)
                 self.folder_tree.see(tree_item)  # Scroll to make it visible
     
+    def update_subfolder_counter(self, image_path):
+        """Update the subfolder counter showing position within current folder."""
+        if not hasattr(self, 'subfolder_counter_label') or not self.subfolder_counter_label:
+            return
+        
+        current_folder = image_path.parent
+        
+        # Get images in this folder
+        if current_folder in self.folder_structure:
+            folder_images = self.folder_structure[current_folder]
+            if image_path in folder_images:
+                position = folder_images.index(image_path) + 1
+                total = len(folder_images)
+                self.subfolder_counter_label.config(text=f"{position} / {total}")
+            else:
+                self.subfolder_counter_label.config(text="")
+        else:
+            self.subfolder_counter_label.config(text="")
+    
     def on_folder_select(self, event):
         """Handle folder selection in tree."""
         selection = self.folder_tree.selection()
@@ -331,8 +351,15 @@ class ImageViewerWindow:
         for option, value in zip(sort_options, sort_values):
             menu.add_command(label=option, command=lambda v=value: self.sort_method.set(v) or self.on_sort_changed(v))
         
-        self.counter_label = tk.Label(info_frame, text="", font=("Arial", 9), bg="#f0f0f0")
-        self.counter_label.pack(side=tk.RIGHT, padx=10)
+        # Counter labels container
+        counter_frame = tk.Frame(info_frame, bg="#f0f0f0")
+        counter_frame.pack(side=tk.RIGHT, padx=10)
+        
+        self.counter_label = tk.Label(counter_frame, text="", font=("Arial", 9), bg="#f0f0f0")
+        self.counter_label.pack()
+        
+        self.subfolder_counter_label = tk.Label(counter_frame, text="", font=("Arial", 8), bg="#f0f0f0", fg="#666666")
+        self.subfolder_counter_label.pack()
         
         # Main content area with tree and image
         content_frame = tk.Frame(self.window)
@@ -361,6 +388,22 @@ class ImageViewerWindow:
                             font=("Arial", 9),
                             width=4)
         jump_btn.pack(side=tk.RIGHT)
+        
+        # Subfolder jump controls
+        tk.Label(jump_control_frame, text="In folder:", font=("Arial", 8), bg="#ffffff", fg="#666666").pack(anchor=tk.W, pady=(10, 0))
+        
+        subfolder_jump_frame = tk.Frame(jump_control_frame, bg="#ffffff")
+        subfolder_jump_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        self.subfolder_jump_entry = tk.Entry(subfolder_jump_frame, font=("Arial", 9), width=10)
+        self.subfolder_jump_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.subfolder_jump_entry.bind('<Return>', lambda e: self.jump_to_subfolder_index())
+        
+        subfolder_jump_btn = tk.Button(subfolder_jump_frame, text="Go", 
+                                       command=self.jump_to_subfolder_index,
+                                       font=("Arial", 9),
+                                       width=4)
+        subfolder_jump_btn.pack(side=tk.RIGHT)
         
         # Separator
         tk.Frame(tree_frame, bg="#d0d0d0", height=1).pack(fill=tk.X, pady=10)
@@ -475,6 +518,9 @@ class ImageViewerWindow:
             self.filename_label.config(text=image_path.name)
             self.counter_label.config(text=f"{self.current_index + 1} / {len(self.image_files)}")
             
+            # Update subfolder counter
+            self.update_subfolder_counter(image_path)
+            
             # Update folder tree selection
             self.update_tree_selection()
             
@@ -542,6 +588,32 @@ class ImageViewerWindow:
                 self.jump_entry.delete(0, tk.END)
             else:
                 messagebox.showwarning("Invalid Index", f"Please enter a number between 1 and {len(self.image_files)}")
+        except ValueError:
+            messagebox.showwarning("Invalid Input", "Please enter a valid number")
+    
+    def jump_to_subfolder_index(self):
+        """Jump to a specific index within the current subfolder."""
+        if not self.image_files:
+            return
+        
+        try:
+            current_folder = self.image_files[self.current_index].parent
+            
+            if current_folder not in self.folder_structure:
+                messagebox.showwarning("Error", "Current folder not found in structure")
+                return
+            
+            folder_images = self.folder_structure[current_folder]
+            target = int(self.subfolder_jump_entry.get())
+            
+            if 1 <= target <= len(folder_images):
+                target_image = folder_images[target - 1]  # Convert to 0-based index
+                if target_image in self.image_files:
+                    self.current_index = self.image_files.index(target_image)
+                    self.show_current_image()
+                    self.subfolder_jump_entry.delete(0, tk.END)
+            else:
+                messagebox.showwarning("Invalid Index", f"Please enter a number between 1 and {len(folder_images)}")
         except ValueError:
             messagebox.showwarning("Invalid Input", "Please enter a valid number")
     
