@@ -59,22 +59,23 @@ try:
     def _get_mobile_model():
         global _mobile_model, _mobile_transform
         if _mobile_model is None:
-            # Use EfficientNet-B0 - faster and better for textures than MobileNet
-            _mobile_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1)
+            # Use ResNet50 - deeper features better for complex matching
+            _mobile_model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
             _mobile_model.eval()
-            # Remove classifier to get features
-            _mobile_model.classifier = torch.nn.Identity()
+            # Remove final classification layer to get 2048-dim features
+            _mobile_model = torch.nn.Sequential(*list(_mobile_model.children())[:-1])
             
             # Move to GPU if available and use half precision for 2x speed
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             _mobile_model = _mobile_model.to(device)
             if device.type == 'cuda':
                 _mobile_model = _mobile_model.half()  # FP16 for faster inference
-            print(f"[INFO] EfficientNet-B0 model loaded on device: {device} (FP16: {device.type == 'cuda'})")
+            print(f"[INFO] ResNet50 model loaded on device: {device} (FP16: {device.type == 'cuda'})")
             
             _mobile_transform = transforms.Compose([
-                # EfficientNet uses 224x224 input
-                transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BILINEAR),
+                # Larger input preserves more detail for texture matching
+                transforms.Resize((288, 288), interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.CenterCrop(256),
                 transforms.ToTensor(),
                 # Standard ImageNet normalization
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -118,10 +119,10 @@ ALGORITHM_WEIGHTS = {
         "color_histogram": 0.15
     },
     "ai_mobile": {
-        "mobile_features": 0.60,
-        "dominant_colors": 0.25,
-        "color_histogram": 0.10,
-        "perceptual_hash": 0.05
+        "mobile_features": 0.75,
+        "dominant_colors": 0.15,
+        "color_histogram": 0.07,
+        "perceptual_hash": 0.03
     }
 }
 
@@ -260,7 +261,7 @@ def extract_ai_features(img):
 
 
 def extract_mobile_features(img):
-    """Extract features using EfficientNet-B0 - optimized for texture matching."""
+    """Extract features using ResNet50 - optimized for texture matching."""
     if not TORCH_AVAILABLE:
         return None
     
@@ -279,14 +280,18 @@ def extract_mobile_features(img):
         dtype = next(model.parameters()).dtype
         img_tensor = img_tensor.to(device, dtype=dtype)
         
-        # Extract features with optimizations
-        with torch.no_grad(), torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
-            features = model(img_tensor)
+        # Extract features with optimizations (fixed deprecation)
+        with torch.no_grad():
+            if device.type == 'cuda':
+                with torch.amp.autocast('cuda'):
+                    features = model(img_tensor)
+            else:
+                features = model(img_tensor)
         
         # Flatten to 1D vector and move to CPU for numpy conversion
         features = features.squeeze().cpu().float().numpy()
         
-        # Normalize
+        # Normalize with L2 norm
         features = features / (np.linalg.norm(features) + 1e-10)
         
         return features
