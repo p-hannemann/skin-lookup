@@ -19,6 +19,7 @@ DEBUG = False
 
 from utils.file_utils import copy_and_rename_to_png
 from utils.skin_matcher import find_matching_skins, copy_skin_files
+from utils.wiki_parser import parse_wiki_for_image, download_image_from_url
 from ui.image_viewer import ImageViewerWindow
 from config.styles import AppStyles
 from app_info import __app_name__, __version__
@@ -306,16 +307,16 @@ class SkinCopierGUI:
                 bg=self.colors['card'],
                 fg=self.colors['text']).pack(side=tk.LEFT)
         
-        self.algorithm_choice = tk.StringVar(value="Render to Skin (Convert+Match) 🎯")
+        self.algorithm_choice = tk.StringVar(value="Balanced (Default)")
         algorithm_dropdown = ttk.Combobox(algo_frame,
                                          textvariable=self.algorithm_choice,
                                          state="readonly",
                                          width=25,
                                          font=("Segoe UI", 9))
         algorithm_dropdown['values'] = (
-            "Render to Skin (Convert+Match) 🎯",
-            "Render Match (3D→2D) ⭐",
             "Balanced (Default)",
+            "Render to Skin (Convert+Match)",
+            "Render Match (3D→2D)",
             "Skin-Optimized",
             "AI Perceptual (ResNet18)",
             "AI Mobile (ResNet50)",
@@ -683,37 +684,26 @@ class SkinCopierGUI:
     def download_image_from_url(self, url):
         """Download image from URL and save temporarily."""
         try:
-            self.debug_log(f"Downloading image from URL: {url}")
             self.matcher_log(f"Downloading image from URL...")
             
-            # Create request with User-Agent header to avoid 403 errors
-            req = urllib.request.Request(
-                url,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-            )
-            self.debug_log("Request created with User-Agent header")
+            # Use the utility function with debug callback
+            img = download_image_from_url(url, debug_callback=self.debug_log)
             
-            with urllib.request.urlopen(req) as response:
-                self.debug_log(f"Response status: {response.status}")
-                image_data = response.read()
-                self.debug_log(f"Downloaded {len(image_data)} bytes")
-            
-            # Create temp folder if it doesn't exist
-            temp_folder = Path("temp")
-            temp_folder.mkdir(exist_ok=True)
-            self.debug_log(f"Using temp folder: {temp_folder.absolute()}")
-            
-            # Save to temp folder
-            temp_path = temp_folder / "temp_input_image.png"
-            with open(temp_path, 'wb') as f:
-                f.write(image_data)
-            self.debug_log(f"Image saved to: {temp_path.absolute()}")
-            
-            self.temp_downloaded_image = str(temp_path.absolute())
-            self.matcher_log(f"Image downloaded successfully")
-            return str(temp_path.absolute())
+            if img:
+                # Create temp folder if it doesn't exist
+                temp_folder = Path("temp")
+                temp_folder.mkdir(exist_ok=True)
+                
+                # Save to temp folder
+                temp_path = temp_folder / "temp_input_image.png"
+                img.save(temp_path)
+                self.debug_log(f"Image saved to: {temp_path.absolute()}")
+                
+                self.temp_downloaded_image = str(temp_path.absolute())
+                self.matcher_log(f"Image downloaded successfully")
+                return str(temp_path.absolute())
+            else:
+                return None
         except Exception as e:
             self.matcher_log(f"Error downloading image: {str(e)}")
             messagebox.showerror("Error", f"Failed to download image:\n{str(e)}")
@@ -722,91 +712,21 @@ class SkinCopierGUI:
     def parse_hypixel_wiki_image(self, wiki_url):
         """Parse Hypixel wiki page to find the sprite head icon image."""
         try:
-            self.debug_log(f"Parsing Hypixel Wiki: {wiki_url}")
             self.matcher_log(f"Parsing Hypixel Wiki page...")
             
-            # Extract page name from URL (e.g., "Minos_Hunter" from https://wiki.hypixel.net/Minos_Hunter)
-            page_name = wiki_url.rstrip('/').split('/')[-1].lower()
-            self.debug_log(f"Page name extracted: {page_name}")
+            # Use the utility function with debug callback
+            img = parse_wiki_for_image(wiki_url, debug_callback=self.debug_log)
             
-            # Download the wiki page with User-Agent header
-            req = urllib.request.Request(
-                wiki_url,
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-            )
-            
-            with urllib.request.urlopen(req) as response:
-                html = response.read().decode('utf-8')
-                self.debug_log(f"Downloaded HTML page ({len(html)} chars)")
-            
-            # Look for common image patterns on Hypixel wiki
-            import re
-            from urllib.parse import urljoin
-            
-            # Find both absolute and relative PNG URLs
-            # Pattern 1: Absolute URLs
-            absolute_pngs = re.findall(r'https://[^\s"<>]+\.png', html)
-            # Pattern 2: Relative URLs in src attributes
-            relative_pngs = re.findall(r'src="(/[^"]+\.png)"', html)
-            # Pattern 3: Relative URLs in href attributes
-            relative_href_pngs = re.findall(r'href="(/[^"]+\.png)"', html)
-            
-            # Convert relative URLs to absolute
-            base_url = 'https://wiki.hypixel.net'
-            png_matches = absolute_pngs + [urljoin(base_url, url) for url in relative_pngs + relative_href_pngs]
-            
-            self.debug_log(f"Found {len(png_matches)} PNG URLs in HTML (absolute: {len(absolute_pngs)}, relative: {len(relative_pngs + relative_href_pngs)})")
-            
-            if not png_matches:
-                raise Exception("Could not find any skin images on the wiki page")
-            
-            # Filter out common non-mob images (logos, icons, UI elements)
-            exclude_keywords = ['logo', 'icon_', 'wiki', 'button', 'background', 'banner']
-            filtered_matches = [img for img in png_matches if not any(keyword in img.lower() for keyword in exclude_keywords)]
-            self.debug_log(f"After filtering UI elements: {len(filtered_matches)} PNG URLs")
-            
-            # If filtering removed all images, keep the original list
-            if not filtered_matches:
-                self.debug_log("Warning: Filtering removed all images, using unfiltered list")
-                filtered_matches = png_matches
-            
-            # PRIORITY 1: Look for sprite images that contain the page name
-            # (e.g., SkyBlock_sprite_entities_minos_hunter.png for page Minos_Hunter)
-            sprite_images = [img for img in filtered_matches if 'sprite' in img.lower()]
-            self.debug_log(f"Found {len(sprite_images)} sprite images")
-            
-            # Find sprite with matching page name
-            matching_sprites = [img for img in sprite_images if page_name in img.lower()]
-            self.debug_log(f"Found {len(matching_sprites)} sprites matching page name '{page_name}'")
-            
-            if matching_sprites:
-                image_url = matching_sprites[0]
-                self.debug_log(f"Selected matching sprite image URL: {image_url}")
-                self.matcher_log(f"Found sprite head icon: {image_url}")
+            if img:
+                # Save to temporary file
+                input_folder = Path("input")
+                input_folder.mkdir(exist_ok=True)
+                temp_path = input_folder / "temp_wiki_image.png"
+                img.save(temp_path)
+                self.matcher_log(f"Image downloaded and saved to: {temp_path}")
+                return str(temp_path.absolute())
             else:
-                # FALLBACK: No sprite matching page name, use render/skin image
-                self.debug_log(f"No sprite found matching '{page_name}', falling back to render/skin images")
-                # Look for images with page name OR common mob image keywords
-                skin_images = [img for img in filtered_matches if (page_name in img.lower() or any(keyword in img.lower() for keyword in ['skyblock_npcs', 'skyblock_entities', 'skin', 'render', 'full', 'body']))]
-                self.debug_log(f"Filtered to {len(skin_images)} likely skin/render images")
-                
-                # If no specific skin images found, use the first image from filtered list
-                if not skin_images:
-                    self.debug_log("No specific skin/render images found, using first filtered PNG")
-                    skin_images = filtered_matches
-                
-                if skin_images:
-                    image_url = skin_images[0]
-                    self.debug_log(f"Selected fallback image URL: {image_url}")
-                    self.matcher_log(f"Using fallback image: {image_url}")
-                else:
-                    raise Exception("No suitable images found after filtering")
-            self.matcher_log(f"Found image URL: {image_url}")
-            
-            # Download the image
-            return self.download_image_from_url(image_url)
+                return None
             
         except Exception as e:
             self.matcher_log(f"Error parsing wiki page: {str(e)}")
@@ -1464,13 +1384,7 @@ Quick color-based matching using smaller histograms. Faster but less accurate. G
             elif method == "url":
                 # Direct URL - download and cache
                 try:
-                    req = urllib.request.Request(
-                        input_value,
-                        headers={'User-Agent': 'Mozilla/5.0'}
-                    )
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        image_data = response.read()
-                    img = Image.open(io.BytesIO(image_data))
+                    img = download_image_from_url(input_value, debug_callback=self.debug_log)
                 except Exception as e:
                     self.preview_input_btn.config(state=tk.DISABLED)
                     return
@@ -1478,59 +1392,7 @@ Quick color-based matching using smaller histograms. Faster but less accurate. G
             elif method == "wiki":
                 # Hypixel wiki - parse and get sprite head icon
                 try:
-                    # Extract page name from URL
-                    page_name = input_value.rstrip('/').split('/')[-1].lower()
-                    
-                    req = urllib.request.Request(
-                        input_value,
-                        headers={'User-Agent': 'Mozilla/5.0'}
-                    )
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        html = response.read().decode('utf-8')
-                    
-                    import re
-                    from urllib.parse import urljoin
-                    
-                    # Find both absolute and relative PNG URLs
-                    absolute_pngs = re.findall(r'https://[^\s"<>]+\.png', html)
-                    relative_pngs = re.findall(r'src="(/[^"]+\.png)"', html)
-                    relative_href_pngs = re.findall(r'href="(/[^"]+\.png)"', html)
-                    
-                    # Convert relative URLs to absolute
-                    base_url = 'https://wiki.hypixel.net'
-                    png_matches = absolute_pngs + [urljoin(base_url, url) for url in relative_pngs + relative_href_pngs]
-                    
-                    # Filter out common non-mob images
-                    exclude_keywords = ['logo', 'icon_', 'wiki', 'button', 'background', 'banner']
-                    filtered_matches = [img for img in png_matches if not any(keyword in img.lower() for keyword in exclude_keywords)]
-                    
-                    # If filtering removed all images, use original list
-                    if not filtered_matches and png_matches:
-                        filtered_matches = png_matches
-                    
-                    if filtered_matches:
-                        # PRIORITY: Look for sprite images that match the page name
-                        sprite_images = [img for img in filtered_matches if 'sprite' in img.lower()]
-                        matching_sprites = [img for img in sprite_images if page_name in img.lower()]
-                        
-                        if matching_sprites:
-                            # Use sprite matching page name
-                            img_url = matching_sprites[0]
-                        else:
-                            # Fallback to render/skin images with page name or mob keywords
-                            skin_images = [img for img in filtered_matches if (page_name in img.lower() or any(keyword in img.lower() for keyword in ['skyblock_npcs', 'skyblock_entities', 'skin', 'render', 'full', 'body']))]
-                            img_url = skin_images[0] if skin_images else filtered_matches[0]
-                        
-                        req = urllib.request.Request(
-                            img_url,
-                            headers={'User-Agent': 'Mozilla/5.0'}
-                        )
-                        with urllib.request.urlopen(req, timeout=5) as response:
-                            image_data = response.read()
-                        img = Image.open(io.BytesIO(image_data))
-                    else:
-                        self.preview_input_btn.config(state=tk.DISABLED)
-                        return
+                    img = parse_wiki_for_image(input_value, debug_callback=self.debug_log)
                 except Exception as e:
                     self.preview_input_btn.config(state=tk.DISABLED)
                     return
