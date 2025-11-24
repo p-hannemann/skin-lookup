@@ -210,6 +210,24 @@ class SkinCopierGUI:
         self.browse_img_btn.pack(side=tk.RIGHT)
         self._add_button_hover(self.browse_img_btn, self.colors['primary'], '#ffffff')
         
+        self.preview_input_btn = tk.Button(img_frame,
+                                           text="🖼️ Preview",
+                                           command=self.show_input_preview_window,
+                                           font=("Segoe UI", 9),
+                                           bg=self.colors['card'],
+                                           fg=self.colors['primary'],
+                                           relief=tk.SOLID,
+                                           borderwidth=1,
+                                           padx=15,
+                                           pady=6,
+                                           cursor="hand2",
+                                           state=tk.DISABLED)
+        self.preview_input_btn.pack(side=tk.RIGHT, padx=(0, 8))
+        self._add_button_hover(self.preview_input_btn, self.colors['primary'], '#ffffff')
+        
+        # Store preview data
+        self.input_preview_image = None
+        
         example_img_btn = tk.Button(img_frame, 
                                     text="Example", 
                                     command=self.load_example_image,
@@ -348,6 +366,8 @@ class SkinCopierGUI:
                                       cursor="hand2")
         # Don't pack yet - will show/hide based on selection
         self._add_button_hover(self.ai_test_btn, self.colors['primary_dark'], 'white', flat=True)
+        
+
         
         # Buttons frame
         btn_frame = tk.Frame(content_card, bg=self.colors['card'], pady=15)
@@ -1061,6 +1081,162 @@ class SkinCopierGUI:
             self.input_image_entry.config(fg='gray')
             self.input_image_entry.bind('<FocusIn>', self._clear_url_placeholder)
             self.input_image_entry.bind('<FocusOut>', self._restore_url_placeholder)
+        
+        # Update preview to show placeholder when method changes
+        self.update_input_preview()
+    
+    def show_input_preview_window(self):
+        """Show input image in a popup window."""
+        if not self.input_preview_image:
+            messagebox.showwarning("No Image", "No image available to preview.")
+            return
+        
+        # Create popup window
+        preview_window = tk.Toplevel(self.root)
+        preview_window.title("Input Image Preview")
+        preview_window.geometry("600x600")
+        preview_window.transient(self.root)
+        
+        # Create frame with scrollbars
+        frame = ttk.Frame(preview_window)
+        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Add canvas for scrolling
+        canvas = tk.Canvas(frame, bg='white')
+        v_scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=canvas.yview)
+        h_scrollbar = ttk.Scrollbar(frame, orient=tk.HORIZONTAL, command=canvas.xview)
+        
+        canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Display image
+        img = self.input_preview_image.copy()
+        
+        # Convert RGBA to RGB if needed
+        if img.mode == 'RGBA':
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[3])
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        photo = ImageTk.PhotoImage(img)
+        
+        # Create image on canvas
+        canvas.create_image(0, 0, anchor=tk.NW, image=photo)
+        canvas.image = photo  # Keep reference
+        
+        # Configure scroll region
+        canvas.configure(scrollregion=canvas.bbox(tk.ALL))
+        
+        # Add image info
+        info_label = ttk.Label(
+            preview_window,
+            text=f"Size: {img.width}x{img.height} pixels",
+            font=('Arial', 9)
+        )
+        info_label.pack(pady=5)
+        
+        # Center window on screen
+        preview_window.update_idletasks()
+        x = (preview_window.winfo_screenwidth() // 2) - (preview_window.winfo_width() // 2)
+        y = (preview_window.winfo_screenheight() // 2) - (preview_window.winfo_height() // 2)
+        preview_window.geometry(f"+{x}+{y}")
+    
+    def show_input_preview_window(self):
+        """Show input image in a popup window."""
+        if not self.input_preview_image:
+            messagebox.showwarning("No Image", "No image available to preview.")
+            return
+        
+        # Create popup window
+        preview_window = tk.Toplevel(self.root)
+        preview_window.title("Input Image Preview")
+        preview_window.configure(bg=self.colors['bg'])
+        preview_window.geometry("650x650")
+        preview_window.transient(self.root)
+        
+        # Main frame
+        main_frame = tk.Frame(preview_window, bg=self.colors['bg'])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Title
+        title_label = tk.Label(main_frame,
+                               text="Input Image Preview",
+                               font=("Segoe UI", 14, "bold"),
+                               bg=self.colors['bg'],
+                               fg=self.colors['text'])
+        title_label.pack(pady=(0, 10))
+        
+        # Image info
+        img = self.input_preview_image
+        info_text = f"Size: {img.width}×{img.height} pixels | Mode: {img.mode}"
+        info_label = tk.Label(main_frame,
+                             text=info_text,
+                             font=("Segoe UI", 9),
+                             bg=self.colors['bg'],
+                             fg=self.colors['text_secondary'])
+        info_label.pack(pady=(0, 10))
+        
+        # Image container with scrollbars
+        container = tk.Frame(main_frame, bg=self.colors['card'], relief=tk.SOLID, borderwidth=1)
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # Canvas for scrolling
+        canvas = tk.Canvas(container, bg='white', highlightthickness=0)
+        v_scrollbar = tk.Scrollbar(container, orient=tk.VERTICAL, command=canvas.yview)
+        h_scrollbar = tk.Scrollbar(container, orient=tk.HORIZONTAL, command=canvas.xview)
+        
+        canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Prepare image for display
+        display_img = img.copy()
+        if display_img.mode == 'RGBA':
+            # Create checkerboard background for transparency
+            bg = Image.new('RGB', display_img.size, (255, 255, 255))
+            bg.paste(display_img, mask=display_img.split()[3])
+            display_img = bg
+        elif display_img.mode != 'RGB':
+            display_img = display_img.convert('RGB')
+        
+        # Create PhotoImage
+        photo = ImageTk.PhotoImage(display_img)
+        
+        # Display image on canvas
+        canvas.create_image(10, 10, anchor=tk.NW, image=photo)
+        canvas.image = photo  # Keep reference
+        
+        # Configure scroll region
+        canvas.configure(scrollregion=(0, 0, display_img.width + 20, display_img.height + 20))
+        
+        # Close button
+        close_btn = tk.Button(main_frame,
+                             text="Close",
+                             command=preview_window.destroy,
+                             font=("Segoe UI", 10),
+                             bg=self.colors['primary'],
+                             fg='white',
+                             activebackground=self.colors['primary_dark'],
+                             activeforeground='white',
+                             relief=tk.FLAT,
+                             cursor="hand2",
+                             padx=30,
+                             pady=8)
+        close_btn.pack(pady=(10, 0))
+        self._add_button_hover(close_btn, self.colors['primary_dark'], 'white', flat=True)
+        
+        # Center window on screen
+        preview_window.update_idletasks()
+        x = (preview_window.winfo_screenwidth() // 2) - (preview_window.winfo_width() // 2)
+        y = (preview_window.winfo_screenheight() // 2) - (preview_window.winfo_height() // 2)
+        preview_window.geometry(f"+{x}+{y}")
     
     def _clear_url_placeholder(self, event):
         """Clear placeholder text on focus."""
@@ -1210,6 +1386,9 @@ Quick color-based matching using smaller histograms. Faster but less accurate. G
         selected = self.algorithm_choice.get()
         input_path = self.input_image_path.get()
         
+        # Update image preview
+        self.update_input_preview()
+        
         # Only show preview button for render_to_skin algorithm
         if "Render to Skin" in selected and "Convert" in selected:
             if input_path and os.path.exists(input_path):
@@ -1220,6 +1399,87 @@ Quick color-based matching using smaller histograms. Faster but less accurate. G
                 self.preview_btn.pack(side=tk.LEFT, padx=8)
         else:
             self.preview_btn.pack_forget()
+    
+    def update_input_preview(self):
+        """Update the input image preview data and enable/disable preview button."""
+        method = self.input_method.get()
+        input_value = self.input_image_path.get()
+        
+        # Clear placeholder text if present
+        if self.input_image_entry.cget('fg') == 'gray':
+            input_value = ""
+        
+        # Clear previous preview
+        self.input_preview_image = None
+        
+        if not input_value:
+            # No input - disable button
+            self.preview_input_btn.config(state=tk.DISABLED)
+            return
+        
+        try:
+            img = None
+            
+            if method == "file":
+                # Local file
+                if os.path.exists(input_value):
+                    img = Image.open(input_value)
+                else:
+                    self.preview_input_btn.config(state=tk.DISABLED)
+                    return
+            
+            elif method == "url":
+                # Direct URL - download and cache
+                try:
+                    req = urllib.request.Request(
+                        input_value,
+                        headers={'User-Agent': 'Mozilla/5.0'}
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        image_data = response.read()
+                    img = Image.open(io.BytesIO(image_data))
+                except Exception as e:
+                    self.preview_input_btn.config(state=tk.DISABLED)
+                    return
+            
+            elif method == "wiki":
+                # Hypixel wiki - parse and get first image
+                try:
+                    req = urllib.request.Request(
+                        input_value,
+                        headers={'User-Agent': 'Mozilla/5.0'}
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        html = response.read().decode('utf-8')
+                    
+                    import re
+                    png_matches = re.findall(r'https://[^\s"<>]+\.png', html)
+                    
+                    if png_matches:
+                        # Try first image
+                        img_url = png_matches[0]
+                        req = urllib.request.Request(
+                            img_url,
+                            headers={'User-Agent': 'Mozilla/5.0'}
+                        )
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            image_data = response.read()
+                        img = Image.open(io.BytesIO(image_data))
+                    else:
+                        self.preview_input_btn.config(state=tk.DISABLED)
+                        return
+                except Exception as e:
+                    self.preview_input_btn.config(state=tk.DISABLED)
+                    return
+            
+            if img:
+                # Store the image for preview window
+                self.input_preview_image = img
+                self.preview_input_btn.config(state=tk.NORMAL)
+        
+        except Exception as e:
+            self.debug_log(f"Error loading input preview: {str(e)}")
+            self.preview_input_btn.config(state=tk.DISABLED)
     
     def preview_converted_image(self):
         """Show a preview of the converted input image."""
