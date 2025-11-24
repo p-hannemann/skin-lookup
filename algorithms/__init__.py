@@ -6,6 +6,7 @@ from algorithms.base import MatchingAlgorithm
 from algorithms.balanced import BalancedAlgorithm
 from algorithms.render_to_skin import RenderToSkinAlgorithm
 from algorithms.render_match import RenderMatchAlgorithm
+from algorithms.color_frequency import ColorFrequencyAlgorithm
 
 # Import other algorithms as they're created
 # from algorithms.skin_optimized import SkinOptimizedAlgorithm
@@ -28,6 +29,7 @@ class AlgorithmRegistry:
         self.register(RenderToSkinAlgorithm())
         self.register(RenderMatchAlgorithm())
         self.register(BalancedAlgorithm())
+        self.register(ColorFrequencyAlgorithm())
         # Register others as they're imported
     
     def register(self, algorithm: MatchingAlgorithm):
