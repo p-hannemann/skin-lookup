@@ -4,3 +4,4 @@
 /output
 /skins
 /__pycache__
+*.spec
