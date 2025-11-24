@@ -1,4 +1,4 @@
-# Skin Copier & Matcher
+# Skin Lookup Tool
 
 Find and match Minecraft skins in Prism Launcher's cache using AI-powered image comparison. Identify the original skin texture from a 3D rendered character image.
 
@@ -18,7 +18,7 @@ Find and match Minecraft skins in Prism Launcher's cache using AI-powered image 
 ## 📥 Installation
 
 ### Windows Executable (Recommended)
-1. Download `SkinCopier-[version].exe` from [Releases](https://github.com/p-hannemann/skin-lookup/releases)
+1. Download `Skin-Lookup-Tool-[version].exe` from [Releases](https://github.com/p-hannemann/skin-lookup/releases)
 2. Run the executable - no installation needed!
 
 > **Note:** Windows SmartScreen may warn about unsigned software. Click "More info" → "Run anyway". The app is open source and safe.

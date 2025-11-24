@@ -1,5 +1,5 @@
 """
-Main GUI application for Skin Copier with integrated skin matching.
+Main GUI application for Skin Lookup Tool with integrated skin matching.
 """
 
 import os
@@ -16,13 +16,13 @@ from utils.file_utils import copy_and_rename_to_png
 from utils.skin_matcher import find_matching_skins, copy_skin_files
 from ui.image_viewer import ImageViewerWindow
 from config.styles import AppStyles
-from version import __version__
+from app_info import __app_name__, __version__
 
 
 class SkinCopierGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Skin Copier & Matcher v{__version__}")
+        self.root.title(f"{__app_name__} v{__version__}")
         self.root.geometry("850x600")
         self.root.resizable(True, True)
         self.is_processing = False
