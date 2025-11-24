@@ -39,6 +39,7 @@ class ImageViewerWindow:
             self.loading = True
             self.sort_method = tk.StringVar(value="path")  # Default sort
             self._updating_tree_selection = False  # Flag to prevent recursion
+            self._last_programmatic_selection = None  # Track programmatic selections
             debug_print("Variables initialized")
         except Exception as e:
             debug_print(f"Error in __init__: {e}")
@@ -248,31 +249,35 @@ class ImageViewerWindow:
             # Only update if selection is different
             current_selection = self.folder_tree.selection()
             if not current_selection or current_selection[0] != tree_item:
-                # Set flag to prevent on_folder_select from triggering navigation
-                self._updating_tree_selection = True
+                debug_print(f"Updating tree selection to folder: {current_folder.name}")
+                # Store this as a programmatic selection
+                self._last_programmatic_selection = tree_item
                 self.folder_tree.selection_set(tree_item)
                 self.folder_tree.see(tree_item)  # Scroll to make it visible
-                self._updating_tree_selection = False
     
     def on_folder_select(self, event):
         """Handle folder selection in tree."""
-        # Ignore if we're programmatically updating the selection
-        if hasattr(self, '_updating_tree_selection') and self._updating_tree_selection:
-            return
-        
         selection = self.folder_tree.selection()
         if not selection:
             return
         
         item = selection[0]
+        
+        # Ignore if this was the last programmatic selection
+        if hasattr(self, '_last_programmatic_selection') and item == self._last_programmatic_selection:
+            debug_print("on_folder_select: Ignoring programmatic selection")
+            self._last_programmatic_selection = None  # Clear it for next time
+            return
+        
         folder_path = self.folder_tree.item(item)["values"]
         
         if not folder_path:
             return
         
         folder_path = Path(folder_path[0])
+        debug_print(f"on_folder_select: User clicked folder {folder_path.name}")
         
-        # Find first image in this folder
+        # Always jump to first image in the selected folder
         if folder_path in self.folder_structure and self.folder_structure[folder_path]:
             first_image = self.folder_structure[folder_path][0]
             if first_image in self.image_files:
@@ -517,6 +522,7 @@ class ImageViewerWindow:
     def previous_image(self):
         """Show previous image."""
         if self.current_index > 0:
+            # Just go to previous image, regardless of folder boundaries
             self.current_index -= 1
             self.show_current_image()
     
