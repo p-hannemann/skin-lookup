@@ -60,6 +60,29 @@ class SkinCopierGUI:
         self.create_copier_tab()
         self.create_browser_tab()
         
+        # Progress bar at the very bottom
+        self.progress_frame = tk.Frame(root, bg=self.colors['bg'])
+        self.progress_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=15, pady=(0, 5))
+        
+        self.progress_bar = ttk.Progressbar(
+            self.progress_frame, 
+            mode='determinate',
+            length=400
+        )
+        self.progress_bar.pack(fill=tk.X, expand=True)
+        
+        self.progress_label = tk.Label(
+            self.progress_frame,
+            text="",
+            font=("Segoe UI", 8),
+            fg=self.colors['text_secondary'],
+            bg=self.colors['bg']
+        )
+        self.progress_label.pack(pady=(2, 0))
+        
+        # Initially hide the progress bar
+        self.progress_frame.pack_forget()
+        
         # Footer with credits
         footer_frame = tk.Frame(root, padx=15, pady=10, bg=self.colors['bg'])
         footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
@@ -899,8 +922,17 @@ class SkinCopierGUI:
         self.match_cancel_btn.config(state=tk.NORMAL)
         self.is_processing = True
         
+        # Show progress bar
+        self.progress_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=15, pady=(0, 5), before=self.root.winfo_children()[-1])
+        
         def progress_callback(current, total, message):
             self.matcher_log(f"[{current}/{total}] {message}")
+            
+            # Update progress bar in main thread
+            if total > 0:
+                percentage = (current / total) * 100
+                self.root.after(0, lambda: self.progress_bar.config(value=percentage))
+                self.root.after(0, lambda: self.progress_label.config(text=f"{current:,}/{total:,} - {message}"))
         
         def run_matching():
             if method == "file":
@@ -940,6 +972,12 @@ class SkinCopierGUI:
                 self.is_processing = False
                 self.match_btn.config(state=tk.NORMAL)
                 self.match_cancel_btn.config(state=tk.DISABLED)
+                
+                # Hide progress bar
+                self.root.after(0, lambda: self.progress_frame.pack_forget())
+                self.root.after(0, lambda: self.progress_bar.config(value=0))
+                self.root.after(0, lambda: self.progress_label.config(text=""))
+                
                 error_msg = f"Matching failed: {type(e).__name__}: {e}"
                 print(f"[ERROR] {error_msg}")
                 import traceback
@@ -1004,6 +1042,11 @@ class SkinCopierGUI:
             
             self.match_btn.config(state=tk.NORMAL)
             self.match_cancel_btn.config(state=tk.DISABLED)
+            
+            # Hide progress bar
+            self.root.after(0, lambda: self.progress_frame.pack_forget())
+            self.root.after(0, lambda: self.progress_bar.config(value=0))
+            self.root.after(0, lambda: self.progress_label.config(text=""))
             
             # Clean up temporary image if it was downloaded
             if self.temp_downloaded_image and os.path.exists(self.temp_downloaded_image):
