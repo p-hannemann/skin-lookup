@@ -3,6 +3,7 @@ Main GUI application for Skin Lookup Tool with integrated skin matching.
 """
 
 import os
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 import threading
@@ -12,6 +13,9 @@ import urllib.request
 import io
 from PIL import Image, ImageTk
 
+# Global debug flag
+DEBUG = False
+
 from utils.file_utils import copy_and_rename_to_png
 from utils.skin_matcher import find_matching_skins, copy_skin_files
 from ui.image_viewer import ImageViewerWindow
@@ -20,8 +24,9 @@ from app_info import __app_name__, __version__
 
 
 class SkinCopierGUI:
-    def __init__(self, root):
+    def __init__(self, root, verbose=False):
         self.root = root
+        self.verbose = verbose
         self.root.title(f"{__app_name__} v{__version__}")
         self.root.geometry("850x600")
         self.root.resizable(True, True)
@@ -31,6 +36,11 @@ class SkinCopierGUI:
         self.last_output_dir = None
         self.preview_window = None
         self.example_image_url = "https://www.minecraftskins.com/uploads/preview-skins/2022/03/22/minos-inquisitor-20083594.png"
+        self.temp_downloaded_image = None
+        
+        if self.verbose:
+            print("[DEBUG] Initializing SkinCopierGUI...")
+            print(f"[DEBUG] App: {__app_name__} v{__version__}")
         
         # Use shared color scheme
         self.colors = AppStyles.colors
@@ -72,8 +82,14 @@ class SkinCopierGUI:
         discord_label.bind("<Enter>", lambda e: discord_label.config(font=("Segoe UI", 9, "underline")))
         discord_label.bind("<Leave>", lambda e: discord_label.config(font=("Segoe UI", 9)))
     
+    def debug_log(self, message):
+        """Log debug messages if verbose mode is enabled."""
+        if self.verbose:
+            print(f"[DEBUG] {message}")
+    
     def create_matcher_tab(self):
         """Create the skin matcher tab."""
+        self.debug_log("Creating matcher tab...")
         matcher_frame = tk.Frame(self.notebook, bg=self.colors['bg'])
         self.notebook.add(matcher_frame, text="🔍 Skin Matcher")
         
@@ -106,18 +122,48 @@ class SkinCopierGUI:
                 bg=self.colors['card'],
                 fg=self.colors['text']).pack(anchor=tk.W)
         
+        # Input method selection (radio buttons)
+        method_frame = tk.Frame(frame_input, bg=self.colors['card'])
+        method_frame.pack(fill=tk.X, pady=(5, 10))
+        
+        self.input_method = tk.StringVar(value="file")
+        
+        tk.Radiobutton(method_frame,
+                      text="Local File",
+                      variable=self.input_method,
+                      value="file",
+                      bg=self.colors['card'],
+                      font=("Segoe UI", 9),
+                      command=self.on_input_method_change).pack(side=tk.LEFT, padx=(0, 15))
+        
+        tk.Radiobutton(method_frame,
+                      text="Direct URL",
+                      variable=self.input_method,
+                      value="url",
+                      bg=self.colors['card'],
+                      font=("Segoe UI", 9),
+                      command=self.on_input_method_change).pack(side=tk.LEFT, padx=(0, 15))
+        
+        tk.Radiobutton(method_frame,
+                      text="Hypixel Wiki",
+                      variable=self.input_method,
+                      value="wiki",
+                      bg=self.colors['card'],
+                      font=("Segoe UI", 9),
+                      command=self.on_input_method_change).pack(side=tk.LEFT)
+        
         img_frame = tk.Frame(frame_input, bg=self.colors['card'])
         img_frame.pack(fill=tk.X, pady=(5, 0))
         
         self.input_image_path = tk.StringVar()
-        entry = tk.Entry(img_frame, 
+        self.input_image_entry = tk.Entry(img_frame, 
                         textvariable=self.input_image_path, 
                         font=("Segoe UI", 10),
                         relief=tk.SOLID,
                         borderwidth=1)
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), ipady=6)
+        self.input_image_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), ipady=6)
         
-        browse_img_btn = tk.Button(img_frame, 
+        self.browse_img_btn = tk.Button(img_frame, 
                                    text="Browse...", 
                                    command=self.browse_input_image,
                                    font=("Segoe UI", 9),
@@ -128,8 +174,8 @@ class SkinCopierGUI:
                                    padx=15,
                                    pady=6,
                                    cursor="hand2")
-        browse_img_btn.pack(side=tk.RIGHT)
-        self._add_button_hover(browse_img_btn, self.colors['primary'], '#ffffff')
+        self.browse_img_btn.pack(side=tk.RIGHT)
+        self._add_button_hover(self.browse_img_btn, self.colors['primary'], '#ffffff')
         
         example_img_btn = tk.Button(img_frame, 
                                     text="Example", 
@@ -509,6 +555,7 @@ class SkinCopierGUI:
         AppStyles.add_button_hover(button, hover_bg, hover_fg)
     
     def browse_input_image(self):
+        self.debug_log("Opening file browser for input image...")
         initial_dir = os.getcwd()
         file_path = filedialog.askopenfilename(
             title="Select Input Image",
@@ -516,7 +563,10 @@ class SkinCopierGUI:
             filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.bmp"), ("All files", "*.*")]
         )
         if file_path:
+            self.debug_log(f"Selected input image: {file_path}")
             self.input_image_path.set(file_path)
+        else:
+            self.debug_log("File browser cancelled")
     
     def browse_search_directory(self):
         # Try to use Prism Launcher assets folder if it exists
@@ -606,21 +656,156 @@ class SkinCopierGUI:
         self.matcher_log_text.config(state=tk.DISABLED)
         self.root.update_idletasks()
     
+    def download_image_from_url(self, url):
+        """Download image from URL and save temporarily."""
+        try:
+            self.debug_log(f"Downloading image from URL: {url}")
+            self.matcher_log(f"Downloading image from URL...")
+            
+            # Create request with User-Agent header to avoid 403 errors
+            req = urllib.request.Request(
+                url,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            )
+            self.debug_log("Request created with User-Agent header")
+            
+            with urllib.request.urlopen(req) as response:
+                self.debug_log(f"Response status: {response.status}")
+                image_data = response.read()
+                self.debug_log(f"Downloaded {len(image_data)} bytes")
+            
+            # Create temp folder if it doesn't exist
+            temp_folder = Path("temp")
+            temp_folder.mkdir(exist_ok=True)
+            self.debug_log(f"Using temp folder: {temp_folder.absolute()}")
+            
+            # Save to temp folder
+            temp_path = temp_folder / "temp_input_image.png"
+            with open(temp_path, 'wb') as f:
+                f.write(image_data)
+            self.debug_log(f"Image saved to: {temp_path.absolute()}")
+            
+            self.temp_downloaded_image = str(temp_path.absolute())
+            self.matcher_log(f"Image downloaded successfully")
+            return str(temp_path.absolute())
+        except Exception as e:
+            self.matcher_log(f"Error downloading image: {str(e)}")
+            messagebox.showerror("Error", f"Failed to download image:\n{str(e)}")
+            return None
+    
+    def parse_hypixel_wiki_image(self, wiki_url):
+        """Parse Hypixel wiki page to find the main skin image."""
+        try:
+            self.debug_log(f"Parsing Hypixel Wiki: {wiki_url}")
+            self.matcher_log(f"Parsing Hypixel Wiki page...")
+            
+            # Download the wiki page with User-Agent header
+            req = urllib.request.Request(
+                wiki_url,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+            )
+            
+            with urllib.request.urlopen(req) as response:
+                html = response.read().decode('utf-8')
+                self.debug_log(f"Downloaded HTML page ({len(html)} chars)")
+            
+            # Look for common image patterns on Hypixel wiki
+            # The wiki typically has images in the infobox or gallery
+            import re
+            
+            # Try to find .png images (common for skins)
+            png_matches = re.findall(r'https://[^\s"<>]+\.png', html)
+            self.debug_log(f"Found {len(png_matches)} PNG URLs in HTML")
+            
+            if not png_matches:
+                # Try alternative patterns
+                img_patterns = [
+                    r'src="(https://[^"]+\.(?:png|jpg|jpeg))"',
+                    r'href="(https://[^"]+\.(?:png|jpg|jpeg))"',
+                ]
+                
+                for pattern in img_patterns:
+                    matches = re.findall(pattern, html)
+                    if matches:
+                        png_matches = matches
+                        break
+            
+            if not png_matches:
+                raise Exception("Could not find any skin images on the wiki page")
+            
+            # Filter for likely skin images (usually contain 'skin' or are in assets/media folders)
+            skin_images = [img for img in png_matches if any(keyword in img.lower() for keyword in ['skin', 'render', 'full', 'body'])]
+            self.debug_log(f"Filtered to {len(skin_images)} likely skin images")
+            
+            # If no specific skin images found, use the first image
+            if not skin_images:
+                self.debug_log("No specific skin images found, using first PNG")
+                skin_images = png_matches
+            
+            # Use the first matching image
+            image_url = skin_images[0]
+            self.debug_log(f"Selected image URL: {image_url}")
+            self.matcher_log(f"Found image URL: {image_url}")
+            
+            # Download the image
+            return self.download_image_from_url(image_url)
+            
+        except Exception as e:
+            self.matcher_log(f"Error parsing wiki page: {str(e)}")
+            messagebox.showerror("Error", f"Failed to parse Hypixel wiki page:\n{str(e)}\n\nTip: You can try using Direct URL mode with the image URL instead.")
+            return None
+    
     def find_matches(self):
+        self.debug_log("=== Find Matches Started ===")
         input_image = self.input_image_path.get()
         search_dir = self.search_dir_path.get()
+        method = self.input_method.get()
+        self.debug_log(f"Input method: {method}")
+        self.debug_log(f"Input image/URL: {input_image}")
+        self.debug_log(f"Search directory: {search_dir}")
+        
+        # Check for placeholder text
+        if self.input_image_entry.cget('fg') == 'gray':
+            input_image = ""
         
         if not input_image:
-            messagebox.showwarning("No Image Selected", "Please select an input image.")
+            self.debug_log("No input provided")
+            messagebox.showwarning("No Image Selected", "Please provide an input image path or URL.")
             return
         
         if not search_dir:
             messagebox.showwarning("No Directory Selected", "Please select a search directory.")
             return
         
-        if not os.path.exists(input_image):
-            messagebox.showerror("Error", f"Input image does not exist: {input_image}")
-            return
+        # Handle different input methods
+        actual_image_path = None
+        
+        if method == "file":
+            self.debug_log("Processing as local file...")
+            if not os.path.exists(input_image):
+                self.debug_log(f"File not found: {input_image}")
+                messagebox.showerror("Error", f"Input image does not exist: {input_image}")
+                return
+            actual_image_path = input_image
+            self.debug_log(f"Using local file: {actual_image_path}")
+        elif method == "url":
+            self.debug_log("Processing as direct URL...")
+            # Download image from URL
+            actual_image_path = self.download_image_from_url(input_image)
+            if not actual_image_path:
+                self.debug_log("URL download failed")
+                return
+        elif method == "wiki":
+            self.debug_log("Processing as Hypixel Wiki URL...")
+            # Parse Hypixel wiki page
+            actual_image_path = self.parse_hypixel_wiki_image(input_image)
+            if not actual_image_path:
+                self.debug_log("Wiki parsing failed")
+                return
         
         if not os.path.exists(search_dir):
             messagebox.showerror("Error", f"Search directory does not exist: {search_dir}")
@@ -643,12 +828,18 @@ class SkinCopierGUI:
             self.matcher_log(f"[{current}/{total}] {message}")
         
         def run_matching():
-            self.matcher_log(f"Input image: {os.path.basename(input_image)}")
+            if method == "file":
+                self.matcher_log(f"Input image: {os.path.basename(actual_image_path)}")
+            elif method == "url":
+                self.matcher_log(f"Input URL: {input_image}")
+            elif method == "wiki":
+                self.matcher_log(f"Hypixel Wiki: {input_image}")
+            
             self.matcher_log(f"Search directory: {search_dir}")
             self.matcher_log(f"Finding top {self.top_n_matches.get()} matches...\n")
             
             matches, error = find_matching_skins(
-                input_image,
+                actual_image_path,
                 search_dir,
                 top_n=self.top_n_matches.get(),
                 progress_callback=progress_callback,
@@ -684,6 +875,14 @@ class SkinCopierGUI:
             
             self.match_btn.config(state=tk.NORMAL)
             self.match_cancel_btn.config(state=tk.DISABLED)
+            
+            # Clean up temporary image if it was downloaded
+            if self.temp_downloaded_image and os.path.exists(self.temp_downloaded_image):
+                try:
+                    os.remove(self.temp_downloaded_image)
+                    self.temp_downloaded_image = None
+                except:
+                    pass  # Ignore cleanup errors
         
         # Run in separate thread
         thread = threading.Thread(target=run_matching, daemon=True)
@@ -755,6 +954,53 @@ class SkinCopierGUI:
             self.check_for_existing_output()
             self.update_viewer_button_state()
     
+    def on_input_method_change(self):
+        """Update UI based on selected input method."""
+        method = self.input_method.get()
+        self.debug_log(f"Input method changed to: {method}")
+        
+        if method == "file":
+            self.browse_img_btn.config(text="Browse...", state=tk.NORMAL)
+            self.input_image_entry.config(state=tk.NORMAL, fg='black')
+            self.input_image_path.set("")
+        elif method == "url":
+            self.browse_img_btn.config(text="Browse...", state=tk.DISABLED)
+            self.input_image_entry.config(state=tk.NORMAL)
+            self.input_image_path.set("")
+            # Show placeholder hint
+            self.input_image_entry.delete(0, tk.END)
+            self.input_image_entry.insert(0, "Enter image URL (e.g., https://example.com/skin.png)")
+            self.input_image_entry.config(fg='gray')
+            self.input_image_entry.bind('<FocusIn>', self._clear_url_placeholder)
+            self.input_image_entry.bind('<FocusOut>', self._restore_url_placeholder)
+        elif method == "wiki":
+            self.browse_img_btn.config(text="Browse...", state=tk.DISABLED)
+            self.input_image_entry.config(state=tk.NORMAL)
+            self.input_image_path.set("")
+            # Show placeholder hint
+            self.input_image_entry.delete(0, tk.END)
+            self.input_image_entry.insert(0, "Enter Hypixel Wiki URL (e.g., https://wiki.hypixel.net/Minos_Inquisitor)")
+            self.input_image_entry.config(fg='gray')
+            self.input_image_entry.bind('<FocusIn>', self._clear_url_placeholder)
+            self.input_image_entry.bind('<FocusOut>', self._restore_url_placeholder)
+    
+    def _clear_url_placeholder(self, event):
+        """Clear placeholder text on focus."""
+        if self.input_image_entry.cget('fg') == 'gray':
+            self.input_image_entry.delete(0, tk.END)
+            self.input_image_entry.config(fg='black')
+    
+    def _restore_url_placeholder(self, event):
+        """Restore placeholder text if empty."""
+        if not self.input_image_path.get():
+            method = self.input_method.get()
+            if method == "url":
+                self.input_image_entry.insert(0, "Enter image URL (e.g., https://example.com/skin.png)")
+                self.input_image_entry.config(fg='gray')
+            elif method == "wiki":
+                self.input_image_entry.insert(0, "Enter Hypixel Wiki URL (e.g., https://wiki.hypixel.net/Minos_Inquisitor)")
+                self.input_image_entry.config(fg='gray')
+    
     def open_discord(self):
         try:
             self.root.clipboard_clear()
@@ -795,9 +1041,12 @@ class SkinCopierGUI:
             self.cancel_btn.config(state=tk.DISABLED)
     
     def process_folder(self):
+        self.debug_log("=== Process Folder Started ===")
         folder = self.folder_path.get()
+        self.debug_log(f"Input folder: {folder}")
         
         if not folder:
+            self.debug_log("No folder selected")
             messagebox.showwarning("No Folder Selected", "Please select an input folder first.")
             return
         
@@ -880,6 +1129,26 @@ class SkinCopierGUI:
 
 
 if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description=f"{__app_name__} v{__version__}")
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose debug output')
+    args = parser.parse_args()
+    
+    # Set global DEBUG flag
+    DEBUG = args.verbose
+    
+    if DEBUG:
+        print("[DEBUG] Verbose mode enabled")
+        print(f"[DEBUG] Starting {__app_name__} v{__version__}")
+    
     root = tk.Tk()
-    app = SkinCopierGUI(root)
+    app = SkinCopierGUI(root, verbose=args.verbose)
+    
+    if DEBUG:
+        print("[DEBUG] GUI initialized, starting mainloop...")
+    
     root.mainloop()
+    
+    if DEBUG:
+        print("[DEBUG] Application closed")

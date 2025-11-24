@@ -34,11 +34,19 @@ python gui_main.py
 ## 🚀 Quick Start
 
 ### Skin Matcher
-1. Select rendered skin image (screenshot/render)
-2. Browse to Prism Launcher skin cache (auto-suggested)
-3. Set number of matches (1-20)
-4. Click "Find Matching Skins"
-5. View results in built-in viewer
+1. **Choose input method:**
+   - **Local File** - Browse for an image file on your computer
+   - **Direct URL** - Paste a direct link to a skin image (e.g., from minecraftskins.com)
+   - **Hypixel Wiki** - Enter a Hypixel Wiki page URL to automatically extract the skin image
+2. Provide input image (file path, URL, or wiki link)
+3. Browse to Prism Launcher skin cache (auto-suggested)
+4. Set number of matches (1-20)
+5. Click "Find Matching Skins"
+6. View results in built-in viewer
+
+**Example URLs:**
+- Direct: `https://www.minecraftskins.com/uploads/preview-skins/2022/03/22/minos-inquisitor-20083594.png`
+- Wiki: `https://wiki.hypixel.net/Minos_Inquisitor`
 
 **Cache Locations:**
 - Windows: `%APPDATA%\PrismLauncher\assets\skins`
