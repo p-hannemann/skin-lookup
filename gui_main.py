@@ -822,51 +822,139 @@ class SkinCopierGUI:
             self.convert_btn.config(state=tk.DISABLED, text="Converting...")
             self.root.update()
             
-            # Load the render image and convert to RGB (not RGBA)
-            render_img = Image.open(input_path).convert('RGB')
+            # Load the render image
+            render_img = Image.open(input_path).convert('RGBA')
+            render_array = np.array(render_img)
+            h, w = render_array.shape[:2]
             
             # Create a blank 64x64 skin template
-            skin = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
-            
-            # Simple algorithm: extract dominant colors and create a basic skin
-            # This is a simplified version - real conversion would need pose detection
-            render_array = np.array(render_img)
-            
-            # Get dominant colors
-            from utils.image_matcher import extract_dominant_colors_fast
-            colors, weights = extract_dominant_colors_fast(render_array, n_colors=8)
-            
-            # Fill skin regions with dominant colors (simplified mapping)
             skin_array = np.zeros((64, 64, 4), dtype=np.uint8)
             
-            # Head (8x8x8 cube mapped to 2D)
-            skin_array[0:8, 8:16] = colors[0].tolist() + [255]  # Top
-            skin_array[8:16, 8:16] = colors[0].tolist() + [255]  # Front
-            skin_array[8:16, 0:8] = colors[0].tolist() + [255]  # Right
-            skin_array[8:16, 16:24] = colors[0].tolist() + [255]  # Left
-            skin_array[8:16, 24:32] = colors[0].tolist() + [255]  # Back
-            skin_array[16:24, 8:16] = colors[0].tolist() + [255]  # Bottom
+            # Extract regions from render based on consistent pose
+            # Assuming: head at top, body in middle, legs at bottom
+            # The character shows front, left side, and top
             
-            # Body
-            if len(colors) > 1:
-                skin_array[20:32, 20:28] = colors[1].tolist() + [255]  # Body front
-                skin_array[20:32, 16:20] = colors[1].tolist() + [255]  # Body right
-                skin_array[20:32, 28:32] = colors[1].tolist() + [255]  # Body left
-                skin_array[20:32, 32:40] = colors[1].tolist() + [255]  # Body back
+            def extract_and_resize(source_region, target_shape):
+                """Extract region from render and resize to target shape."""
+                y1, y2, x1, x2 = source_region
+                region = render_array[y1:y2, x1:x2]
+                if region.size == 0:
+                    return np.zeros(target_shape + (4,), dtype=np.uint8)
+                extracted = Image.fromarray(region).resize((target_shape[1], target_shape[0]), Image.Resampling.LANCZOS)
+                return np.array(extracted)
             
-            # Arms
-            if len(colors) > 2:
-                # Right arm
-                skin_array[20:32, 44:48] = colors[2].tolist() + [255]
-                # Left arm
-                skin_array[20:32, 36:40] = colors[2].tolist() + [255]
+            def get_average_color(region_array):
+                """Get average color from a region, excluding transparent pixels."""
+                if region_array.size == 0:
+                    return np.array([0, 0, 0, 255], dtype=np.uint8)
+                # Only average non-transparent pixels
+                mask = region_array[:, :, 3] > 128
+                if not mask.any():
+                    return np.array([0, 0, 0, 255], dtype=np.uint8)
+                avg = np.mean(region_array[mask], axis=0).astype(np.uint8)
+                avg[3] = 255  # Full opacity
+                return avg
             
-            # Legs
-            if len(colors) > 3:
-                # Right leg
-                skin_array[20:32, 4:8] = colors[3].tolist() + [255]
-                # Left leg
-                skin_array[20:32, 20:24] = colors[3].tolist() + [255]
+            # Detect head region (top ~30% of image, centered horizontally)
+            head_top = int(h * 0.05)
+            head_bottom = int(h * 0.35)
+            head_left = int(w * 0.35)
+            head_right = int(w * 0.65)
+            
+            # Detect body region (middle ~35% of image)
+            body_top = int(h * 0.35)
+            body_bottom = int(h * 0.70)
+            body_left = int(w * 0.35)
+            body_right = int(w * 0.65)
+            
+            # Detect leg region (bottom ~30% of image)
+            leg_top = int(h * 0.70)
+            leg_bottom = int(h * 0.95)
+            leg_left = int(w * 0.35)
+            leg_right = int(w * 0.65)
+            
+            # HEAD MAPPING (8x8x8 cube)
+            # Extract visible head pixels from render
+            head_region = render_array[head_top:head_bottom, head_left:head_right]
+            head_img = Image.fromarray(head_region)
+            
+            # Map head front (visible in render)
+            front_head = extract_and_resize((head_top + int((head_bottom-head_top)*0.4), 
+                                            head_bottom - int((head_bottom-head_top)*0.2),
+                                            head_left + int((head_right-head_left)*0.3),
+                                            head_right - int((head_right-head_left)*0.3)), (8, 8))
+            skin_array[8:16, 8:16] = front_head  # Head front
+            
+            # Map head left side (visible in render)
+            left_head = extract_and_resize((head_top + int((head_bottom-head_top)*0.4),
+                                           head_bottom - int((head_bottom-head_top)*0.2),
+                                           head_left,
+                                           head_left + int((head_right-head_left)*0.3)), (8, 8))
+            skin_array[8:16, 16:24] = left_head  # Head left
+            
+            # Map head top (visible in render)
+            top_head = extract_and_resize((head_top,
+                                          head_top + int((head_bottom-head_top)*0.3),
+                                          head_left + int((head_right-head_left)*0.3),
+                                          head_right - int((head_right-head_left)*0.3)), (8, 8))
+            skin_array[0:8, 8:16] = top_head  # Head top
+            
+            # Estimate right side (mirror of left)
+            skin_array[8:16, 0:8] = np.fliplr(left_head)  # Head right
+            
+            # Estimate back (average color)
+            avg_head = get_average_color(front_head)
+            skin_array[8:16, 24:32] = avg_head  # Head back
+            
+            # Estimate bottom
+            skin_array[16:24, 8:16] = avg_head * 0.8  # Head bottom (darker)
+            
+            # BODY MAPPING (8x12x4 cuboid)
+            body_region = render_array[body_top:body_bottom, body_left:body_right]
+            
+            # Body front
+            front_body = extract_and_resize((body_top + int((body_bottom-body_top)*0.1),
+                                            body_bottom,
+                                            body_left + int((body_right-body_left)*0.25),
+                                            body_right - int((body_right-body_left)*0.25)), (12, 8))
+            skin_array[20:32, 20:28] = front_body  # Body front
+            
+            # Body left side
+            left_body = extract_and_resize((body_top + int((body_bottom-body_top)*0.1),
+                                           body_bottom,
+                                           body_left,
+                                           body_left + int((body_right-body_left)*0.25)), (12, 4))
+            skin_array[20:32, 16:20] = left_body  # Body right side
+            
+            # Estimate other sides
+            skin_array[20:32, 28:32] = np.fliplr(left_body)  # Body left (mirror)
+            avg_body = get_average_color(front_body)
+            skin_array[20:32, 32:40] = avg_body  # Body back
+            
+            # ARMS (4x12x4 cuboids)
+            # Right arm (visible left in render)
+            right_arm_region = extract_and_resize((body_top + int((body_bottom-body_top)*0.1),
+                                                  body_bottom,
+                                                  body_left - int((body_right-body_left)*0.15),
+                                                  body_left), (12, 4))
+            skin_array[20:32, 44:48] = right_arm_region  # Right arm front
+            
+            # Left arm (estimated from right)
+            skin_array[20:32, 36:40] = right_arm_region  # Left arm front
+            
+            # LEGS (4x12x4 cuboids)
+            # Extract leg region
+            right_leg = extract_and_resize((leg_top,
+                                          leg_bottom,
+                                          leg_left + int((leg_right-leg_left)*0.2),
+                                          leg_left + int((leg_right-leg_left)*0.4)), (12, 4))
+            skin_array[20:32, 4:8] = right_leg  # Right leg front
+            
+            left_leg = extract_and_resize((leg_top,
+                                          leg_bottom,
+                                          leg_left + int((leg_right-leg_left)*0.6),
+                                          leg_left + int((leg_right-leg_left)*0.8)), (12, 4))
+            skin_array[20:32, 20:24] = left_leg  # Left leg front
             
             # Convert back to image
             skin = Image.fromarray(skin_array, 'RGBA')
