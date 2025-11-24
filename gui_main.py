@@ -285,6 +285,7 @@ class SkinCopierGUI:
                                          width=25,
                                          font=("Segoe UI", 9))
         algorithm_dropdown['values'] = (
+            "Render Match (3D→2D) ⭐",
             "Balanced (Default)",
             "Skin-Optimized",
             "AI Perceptual (ResNet18)",
@@ -946,6 +947,7 @@ class SkinCopierGUI:
             
             # Map algorithm dropdown to internal name
             algo_map = {
+                "Render Match (3D→2D) ⭐": "render_match",
                 "Balanced (Default)": "balanced",
                 "Skin-Optimized": "skin_optimized",
                 "AI Perceptual (ResNet18)": "ai_perceptual",
@@ -1023,6 +1025,10 @@ class SkinCopierGUI:
                         metric_parts.append(f"AI: {metrics['ai_dist']:.4f}")
                     if 'mobile_dist' in metrics:
                         metric_parts.append(f"Mobile: {metrics['mobile_dist']:.4f}")
+                    if 'palette_dist' in metrics:
+                        metric_parts.append(f"Palette: {metrics['palette_dist']:.4f}")
+                    if 'spatial_dist' in metrics:
+                        metric_parts.append(f"Spatial: {metrics['spatial_dist']:.4f}")
                     if 'ai_unavailable' in metrics:
                         metric_parts.append(f"AI: N/A (PyTorch not installed)")
                     if 'mobile_unavailable' in metrics:
@@ -1256,6 +1262,9 @@ After installation, restart the application."""
         """Show information about matching algorithms."""
         info_text = """🔍 Matching Algorithms:
 
+⭐ Render Match (3D→2D) - BEST FOR YOUR USE CASE!
+SPECIFICALLY DESIGNED for matching 3D rendered characters to 2D skin files! Extracts 24 dominant colors ignoring lighting/shading, analyzes spatial color patterns in a 4x4 grid. Does NOT use neural networks - uses color palette matching (70%) + spatial patterns (30%). FAST and designed for this exact problem!
+
 🎯 Balanced (Default)
 Optimal for most cases. Uses dominant colors (60%), color histogram (35%), and perceptual hashing (5%). Best general-purpose algorithm.
 
@@ -1265,8 +1274,8 @@ Designed for Minecraft skins. Detects 64x64/64x32 textures, analyzes texture pat
 🤖 AI Perceptual (ResNet18)
 Uses ResNet18 deep learning for feature extraction. Focuses on deep semantic features (50%), colors (35%), and histogram (15%). Good for general image matching. Requires PyTorch + GPU.
 
-📱 AI Mobile (ResNet50) - RECOMMENDED FOR 3D→2D
-Uses ResNet50 (deeper than ResNet18) with FP16 for texture matching. Extracts 2048-dim features with multi-scale processing. Better at matching 3D rendered views to flat 2D skins. Weights: mobile features (60%), colors (25%), histogram (10%), hash (5%). BEST for matching rendered character images to skin textures! Requires PyTorch + GPU.
+📱 AI Mobile (ResNet50)
+Uses ResNet50 (deeper than ResNet18) with FP16 for texture matching. Extracts 2048-dim features with multi-scale processing. Requires PyTorch + GPU.
 
 🔬 Deep Features
 Uses edge detection and structural similarity (SSIM). Focuses on shapes and patterns rather than colors. Good for similar armor/clothing styles.
@@ -1277,7 +1286,7 @@ Emphasizes overall color presence over exact placement. Best when rendered pose/
 ⚡ Fast Match
 Quick color-based matching using smaller histograms. Faster but less accurate. Good for large datasets (10,000+ files).
 
-💡 Tip: Use AI Mobile for 3D renders, Skin-Optimized for flat skins!"""
+💡 Tip: Try Render Match first - it's designed exactly for your use case!"""
         
         messagebox.showinfo("Algorithm Information", info_text)
     

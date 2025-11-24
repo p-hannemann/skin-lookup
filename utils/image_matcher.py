@@ -123,6 +123,10 @@ ALGORITHM_WEIGHTS = {
         "dominant_colors": 0.15,
         "color_histogram": 0.07,
         "perceptual_hash": 0.03
+    },
+    "render_match": {
+        "color_palette": 0.70,
+        "spatial_pattern": 0.30
     }
 }
 
@@ -153,6 +157,31 @@ def extract_dominant_colors_fast(img_array, n_colors=12):
     weights = top_counts / top_counts.sum()
     
     return colors, weights
+
+
+def extract_render_features(img_array):
+    """Extract features optimized for 3D render to 2D skin matching."""
+    # Extract more colors with finer quantization
+    colors, weights = extract_dominant_colors_fast(img_array, n_colors=24)
+    
+    # Create spatial color grid (divide image into regions)
+    h, w = img_array.shape[:2]
+    grid_size = 4  # 4x4 grid
+    cell_h, cell_w = h // grid_size, w // grid_size
+    
+    spatial_features = []
+    for i in range(grid_size):
+        for j in range(grid_size):
+            cell = img_array[i*cell_h:(i+1)*cell_h, j*cell_w:(j+1)*cell_w]
+            # Get average color per cell
+            avg_color = np.mean(cell.reshape(-1, 3), axis=0)
+            spatial_features.extend(avg_color)
+    
+    return {
+        'colors': colors,
+        'weights': weights,
+        'spatial': np.array(spatial_features)
+    }
 
 
 def color_palette_distance_fast(colors1, weights1, colors2, weights2):
@@ -413,6 +442,13 @@ def get_image_features(image_path, algorithm="balanced"):
                 features['mobile_available'] = mobile_features is not None
             else:
                 features['mobile_available'] = False
+        
+        # Render Match algorithm (3D→2D specialized)
+        if algorithm == "render_match":
+            render_feat = extract_render_features(img_array)
+            features['render_colors'] = render_feat['colors']
+            features['render_weights'] = render_feat['weights']
+            features['render_spatial'] = render_feat['spatial']
         
         return features, None
 
@@ -705,5 +741,31 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
                 'mobile_unavailable': True,
                 'combined': combined_distance
             }
+    
+    # Render Match algorithm (specialized for 3D→2D)
+    elif algorithm == "render_match":
+        # Color palette matching (with more colors)
+        palette_distance = color_palette_distance_fast(
+            target_features['render_colors'],
+            target_features['render_weights'],
+            candidate_features['render_colors'],
+            candidate_features['render_weights']
+        )
+        
+        # Spatial pattern matching (grid-based)
+        spatial1 = target_features['render_spatial']
+        spatial2 = candidate_features['render_spatial']
+        spatial_distance = np.linalg.norm(spatial1 - spatial2) / (np.linalg.norm(spatial1) + np.linalg.norm(spatial2) + 1e-10)
+        
+        combined_distance = (
+            weights['color_palette'] * palette_distance +
+            weights['spatial_pattern'] * spatial_distance
+        )
+        
+        metrics = {
+            'palette_dist': palette_distance,
+            'spatial_dist': spatial_distance,
+            'combined': combined_distance
+        }
     
     return combined_distance, metrics
