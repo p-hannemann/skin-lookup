@@ -16,12 +16,13 @@ from utils.file_utils import copy_and_rename_to_png
 from utils.skin_matcher import find_matching_skins, copy_skin_files
 from ui.image_viewer import ImageViewerWindow
 from config.styles import AppStyles
+from version import __version__
 
 
 class SkinCopierGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Skin Copier & Matcher")
+        self.root.title(f"Skin Copier & Matcher v{__version__}")
         self.root.geometry("850x600")
         self.root.resizable(True, True)
         self.is_processing = False
