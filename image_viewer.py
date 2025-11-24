@@ -37,10 +37,10 @@ class ImageViewerWindow:
             self.folder_to_tree_item = {}  # Map folder paths to tree items
             self.current_index = 0
             self.loading = True
-            self.sort_method = tk.StringVar(value="path")  # Default sort
             self._updating_tree_selection = False  # Flag to prevent recursion
             self._last_programmatic_selection = None  # Track programmatic selections
             self.subfolder_counter_label = None  # Will be set in setup_ui
+            self.sort_display = None  # Will be set in setup_ui
             debug_print("Variables initialized")
         except Exception as e:
             debug_print(f"Error in __init__: {e}")
@@ -115,7 +115,17 @@ class ImageViewerWindow:
         if not self.all_files_data:
             return
         
-        sort = self.sort_method.get()
+        # Map display name to sort method
+        sort_map = {
+            "Path": "path",
+            "Created (Newest)": "created_desc",
+            "Created (Oldest)": "created_asc",
+            "Modified (Newest)": "modified_desc",
+            "Modified (Oldest)": "modified_asc"
+        }
+        
+        display_value = self.sort_display.get()
+        sort = sort_map.get(display_value, "path")
         
         if sort == "path":
             # Sort by path (default)
@@ -333,23 +343,20 @@ class ImageViewerWindow:
         info_frame.pack(fill=tk.X)
         info_frame.pack_propagate(False)  # Prevent frame from shrinking
         
-        self.filename_label = tk.Label(info_frame, text="", font=("Arial", 10, "bold"), bg="#f0f0f0")
+        self.filename_label = tk.Label(info_frame, text="", font=("Arial", 10, "bold"), bg="#f0f0f0", anchor="w")
         self.filename_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        # Sort dropdown
-        tk.Label(info_frame, text="Sort by:", font=("Arial", 9), bg="#f0f0f0").pack(side=tk.RIGHT, padx=(10, 5))
+        # Sort dropdown with proper order
         sort_options = ["Path", "Created (Newest)", "Created (Oldest)", "Modified (Newest)", "Modified (Oldest)"]
-        sort_values = ["path", "created_desc", "created_asc", "modified_desc", "modified_asc"]
+        self.sort_display = tk.StringVar(value="Path")
         
-        sort_dropdown = tk.OptionMenu(info_frame, self.sort_method, *sort_values, command=self.on_sort_changed)
-        sort_dropdown.config(font=("Arial", 9), bg="#ffffff", width=15)
-        sort_dropdown.pack(side=tk.RIGHT, padx=5)
+        sort_combo = ttk.Combobox(info_frame, textvariable=self.sort_display, 
+                                  values=sort_options, state="readonly", 
+                                  font=("Arial", 9), width=18)
+        sort_combo.pack(side=tk.RIGHT, padx=(5, 10))
+        sort_combo.bind("<<ComboboxSelected>>", self.on_sort_changed)
         
-        # Update menu to show friendly names
-        menu = sort_dropdown["menu"]
-        menu.delete(0, "end")
-        for option, value in zip(sort_options, sort_values):
-            menu.add_command(label=option, command=lambda v=value: self.sort_method.set(v) or self.on_sort_changed(v))
+        tk.Label(info_frame, text="Sort by:", font=("Arial", 9), bg="#f0f0f0").pack(side=tk.RIGHT)
         
         # Counter labels container
         counter_frame = tk.Frame(info_frame, bg="#f0f0f0")
@@ -370,46 +377,46 @@ class ImageViewerWindow:
         tree_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         tree_frame.pack_propagate(False)  # Keep fixed width
         
-        # Jump to index controls at top
-        jump_control_frame = tk.Frame(tree_frame, bg="#ffffff", pady=10)
-        jump_control_frame.pack(fill=tk.X, padx=5)
+        # Jump to index controls at top - using grid for alignment
+        jump_control_frame = tk.Frame(tree_frame, bg="#ffffff")
+        jump_control_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
         
-        tk.Label(jump_control_frame, text="Jump to:", font=("Arial", 9, "bold"), bg="#ffffff").pack(anchor=tk.W)
+        # Configure grid columns - label column fixed, entry expands, button fixed
+        jump_control_frame.grid_columnconfigure(0, weight=0)  # Label column
+        jump_control_frame.grid_columnconfigure(1, weight=1)  # Entry column (expands)
+        jump_control_frame.grid_columnconfigure(2, weight=0)  # Button column
         
-        jump_input_frame = tk.Frame(jump_control_frame, bg="#ffffff")
-        jump_input_frame.pack(fill=tk.X, pady=(5, 0))
+        # Jump to - row 0
+        tk.Label(jump_control_frame, text="Jump to:", font=("Arial", 9, "bold"), bg="#ffffff").grid(row=0, column=0, sticky="w", padx=(0, 5))
         
-        self.jump_entry = tk.Entry(jump_input_frame, font=("Arial", 9), width=10)
-        self.jump_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.jump_entry = tk.Entry(jump_control_frame, font=("Arial", 9))
+        self.jump_entry.grid(row=0, column=1, sticky="ew", padx=(0, 2))
         self.jump_entry.bind('<Return>', lambda e: self.jump_to_index())
         
-        jump_btn = tk.Button(jump_input_frame, text="Go", 
+        jump_btn = tk.Button(jump_control_frame, text="Go", 
                             command=self.jump_to_index,
-                            font=("Arial", 9),
-                            width=4)
-        jump_btn.pack(side=tk.RIGHT)
+                            font=("Arial", 8),
+                            width=3, pady=1)
+        jump_btn.grid(row=0, column=2, sticky="e")
         
-        # Subfolder jump controls
-        tk.Label(jump_control_frame, text="In folder:", font=("Arial", 8), bg="#ffffff", fg="#666666").pack(anchor=tk.W, pady=(10, 0))
+        # In folder - row 1
+        tk.Label(jump_control_frame, text="In folder:", font=("Arial", 8), bg="#ffffff", fg="#666666").grid(row=1, column=0, sticky="w", padx=(0, 5), pady=(3, 0))
         
-        subfolder_jump_frame = tk.Frame(jump_control_frame, bg="#ffffff")
-        subfolder_jump_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        self.subfolder_jump_entry = tk.Entry(subfolder_jump_frame, font=("Arial", 9), width=10)
-        self.subfolder_jump_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.subfolder_jump_entry = tk.Entry(jump_control_frame, font=("Arial", 9))
+        self.subfolder_jump_entry.grid(row=1, column=1, sticky="ew", padx=(0, 2), pady=(3, 0))
         self.subfolder_jump_entry.bind('<Return>', lambda e: self.jump_to_subfolder_index())
         
-        subfolder_jump_btn = tk.Button(subfolder_jump_frame, text="Go", 
+        subfolder_jump_btn = tk.Button(jump_control_frame, text="Go", 
                                        command=self.jump_to_subfolder_index,
-                                       font=("Arial", 9),
-                                       width=4)
-        subfolder_jump_btn.pack(side=tk.RIGHT)
+                                       font=("Arial", 8),
+                                       width=3, pady=1)
+        subfolder_jump_btn.grid(row=1, column=2, sticky="e", pady=(3, 0))
         
         # Separator
-        tk.Frame(tree_frame, bg="#d0d0d0", height=1).pack(fill=tk.X, pady=10)
+        tk.Frame(tree_frame, bg="#d0d0d0", height=1).pack(fill=tk.X, pady=(5, 5))
         
         # Folder tree
-        tk.Label(tree_frame, text="Folders", font=("Arial", 10, "bold"), bg="#ffffff").pack(pady=5)
+        tk.Label(tree_frame, text="Folders", font=("Arial", 10, "bold"), bg="#ffffff").pack(pady=(0, 5))
         
         tree_scroll = tk.Scrollbar(tree_frame)
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
