@@ -28,6 +28,10 @@ Find and match Minecraft skins in Prism Launcher's cache using AI-powered image 
 git clone https://github.com/p-hannemann/skin-lookup.git
 cd skin-lookup
 pip install pillow numpy imagehash
+
+# Optional: For AI Perceptual algorithm (most powerful)
+pip install torch torchvision
+
 python gui_main.py
 ```
 
@@ -52,6 +56,7 @@ python gui_main.py
 **Matching Algorithms:**
 - 🎯 **Balanced (Default)** - Best general-purpose algorithm using dominant colors (60%), color histogram (35%), and perceptual hashing (5%)
 - 🎨 **Skin-Optimized** - Specifically designed for Minecraft skins, detects 64x64/64x32 textures and analyzes texture patterns
+- 🤖 **AI Perceptual (Neural Network)** ⭐ **MOST POWERFUL** - Uses ResNet18 deep learning model to understand visual similarity like humans do. Requires PyTorch.
 - 🔬 **Deep Features** - Uses edge detection and structural similarity (SSIM), focuses on shapes and patterns
 - 🌈 **Color Distribution** - Emphasizes overall color presence over exact placement, best for different poses/angles
 - ⚡ **Fast Match** - Quick color-based matching for large datasets (10,000+ files)
@@ -74,12 +79,22 @@ python gui_main.py
 ## 🔧 Technical Details
 
 **Matching Algorithms:**
-The tool offers five different algorithms optimized for various scenarios:
+The tool offers six different algorithms optimized for various scenarios:
 - **Balanced** - General-purpose: dominant colors (60%), histogram (35%), hashing (5%)
 - **Skin-Optimized** - Minecraft-specific: texture patterns (40%), colors (35%), dimension matching (15%), histogram (10%)
+- **AI Perceptual** - Neural network: ResNet18 features (70%), colors (20%), histogram (10%) - **Most accurate**
 - **Deep Features** - Structure-focused: edge detection (50%), SSIM (30%), colors (20%)
 - **Color Distribution** - Color-emphasis: histogram (70%), dominant colors (30%)
 - **Fast Match** - Speed-optimized: histogram (80%), hashing (20%)
+
+**PyTorch Installation (for AI Perceptual):**
+```bash
+# CPU version (smaller, works everywhere)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# GPU version (faster, requires NVIDIA GPU)
+pip install torch torchvision
+```
 - Perceptual Hash (5%) - Structural similarity
 
 **Requirements:** Python 3.11+, Pillow, NumPy, ImageHash

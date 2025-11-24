@@ -264,12 +264,14 @@ class SkinCopierGUI:
         algorithm_dropdown['values'] = (
             "Balanced (Default)",
             "Skin-Optimized",
+            "AI Perceptual (Neural Network)",
             "Deep Features",
             "Color Distribution",
             "Fast Match"
         )
         algorithm_dropdown.current(0)
         algorithm_dropdown.pack(side=tk.LEFT, padx=8)
+        algorithm_dropdown.bind("<<ComboboxSelected>>", self.on_algorithm_change)
         
         # Algorithm info button
         info_btn = tk.Label(algo_frame,
@@ -280,6 +282,20 @@ class SkinCopierGUI:
                            cursor="hand2")
         info_btn.pack(side=tk.LEFT, padx=5)
         info_btn.bind("<Button-1>", self.show_algorithm_info)
+        
+        # AI Test button (hidden by default)
+        self.ai_test_btn = tk.Button(algo_frame,
+                                      text="🧪 Test AI",
+                                      command=self.test_ai_availability,
+                                      font=("Segoe UI", 9),
+                                      bg=self.colors['primary'],
+                                      fg="white",
+                                      relief=tk.FLAT,
+                                      padx=12,
+                                      pady=4,
+                                      cursor="hand2")
+        # Don't pack yet - will show/hide based on selection
+        self._add_button_hover(self.ai_test_btn, self.colors['primary_dark'], 'white', flat=True)
         
         # Buttons frame
         btn_frame = tk.Frame(content_card, bg=self.colors['card'], pady=15)
@@ -877,6 +893,7 @@ class SkinCopierGUI:
             algo_map = {
                 "Balanced (Default)": "balanced",
                 "Skin-Optimized": "skin_optimized",
+                "AI Perceptual (Neural Network)": "ai_perceptual",
                 "Deep Features": "deep_features",
                 "Color Distribution": "color_distribution",
                 "Fast Match": "fast"
@@ -928,6 +945,10 @@ class SkinCopierGUI:
                         metric_parts.append(f"SSIM: {metrics['ssim_dist']:.4f}")
                     if 'dim_match' in metrics:
                         metric_parts.append(f"DimMatch: {metrics['dim_match']:.2f}")
+                    if 'ai_dist' in metrics:
+                        metric_parts.append(f"AI: {metrics['ai_dist']:.4f}")
+                    if 'ai_unavailable' in metrics:
+                        metric_parts.append(f"AI: N/A (PyTorch not installed)")
                     
                     self.matcher_log(f"   {' | '.join(metric_parts)}")
                 
@@ -1069,6 +1090,85 @@ class SkinCopierGUI:
                 self.input_image_entry.insert(0, "Enter Hypixel Wiki URL (e.g., https://wiki.hypixel.net/Minos_Inquisitor)")
                 self.input_image_entry.config(fg='gray')
     
+    def on_algorithm_change(self, event=None):
+        """Handle algorithm selection change."""
+        selected = self.algorithm_choice.get()
+        self.debug_log(f"Algorithm changed to: {selected}")
+        
+        # Show/hide AI test button based on selection
+        if "AI Perceptual" in selected:
+            self.ai_test_btn.pack(side=tk.LEFT, padx=8)
+        else:
+            self.ai_test_btn.pack_forget()
+    
+    def test_ai_availability(self):
+        """Test if PyTorch is available and AI algorithm is working."""
+        self.debug_log("Testing AI availability...")
+        
+        try:
+            # Import here to test availability
+            import torch
+            import torchvision.models as models
+            
+            result_parts = ["✅ PyTorch Test Results:\n"]
+            result_parts.append(f"✓ PyTorch version: {torch.__version__}")
+            result_parts.append(f"✓ Torchvision installed: Yes")
+            
+            # Test model loading
+            try:
+                result_parts.append("\n🔄 Loading ResNet18 model...")
+                test_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+                result_parts.append("✓ ResNet18 loaded successfully")
+                
+                # Test feature extraction
+                result_parts.append("\n🔄 Testing feature extraction...")
+                from utils.image_matcher import extract_ai_features
+                from PIL import Image
+                import numpy as np
+                
+                # Create a test image
+                test_img = Image.fromarray(np.random.randint(0, 255, (64, 64, 3), dtype=np.uint8))
+                features = extract_ai_features(test_img)
+                
+                if features is not None:
+                    result_parts.append(f"✓ Feature extraction working (512-dimensional vector)")
+                    result_parts.append("\n🎉 AI Perceptual algorithm is FULLY OPERATIONAL!")
+                    result_parts.append("\nThe algorithm will use deep learning features for matching.")
+                    
+                    messagebox.showinfo("AI Test - SUCCESS", "\n".join(result_parts))
+                else:
+                    result_parts.append("⚠️ Feature extraction failed")
+                    result_parts.append("\n⚠️ AI will use fallback mode (color + histogram)")
+                    messagebox.showwarning("AI Test - Partial", "\n".join(result_parts))
+                    
+            except Exception as e:
+                result_parts.append(f"\n❌ Model loading failed: {str(e)}")
+                result_parts.append("\n⚠️ AI will use fallback mode (color + histogram)")
+                messagebox.showwarning("AI Test - Partial", "\n".join(result_parts))
+                
+        except ImportError as e:
+            error_msg = """❌ PyTorch NOT Installed
+
+PyTorch is required for the AI Perceptual algorithm.
+
+Current status:
+• The algorithm will use FALLBACK mode
+• Fallback uses: color matching + histogram
+• Results will be less accurate
+
+To enable full AI features:
+
+📦 Install PyTorch (CPU version - recommended):
+   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+Or GPU version (if you have NVIDIA GPU):
+   pip install torch torchvision
+
+After installation, restart the application."""
+            
+            messagebox.showerror("AI Test - PyTorch Not Found", error_msg)
+            self.debug_log(f"PyTorch import failed: {str(e)}")
+    
     def show_algorithm_info(self, event=None):
         """Show information about matching algorithms."""
         info_text = """🔍 Matching Algorithms:
@@ -1079,6 +1179,9 @@ Optimal for most cases. Uses dominant colors (60%), color histogram (35%), and p
 🎨 Skin-Optimized
 Designed for Minecraft skins. Detects 64x64/64x32 textures, analyzes texture patterns, and focuses on skin-specific features. Best for finding exact skin matches.
 
+🤖 AI Perceptual (Neural Network)
+Uses pre-trained ResNet18 deep learning model for perceptual similarity. Extracts high-level visual features (70%), combined with colors (20%) and histogram (10%). Most powerful algorithm, understands visual similarity like a human would. Requires PyTorch installation.
+
 🔬 Deep Features
 Uses edge detection and structural similarity (SSIM). Focuses on shapes and patterns rather than colors. Good for similar armor/clothing styles.
 
@@ -1088,7 +1191,7 @@ Emphasizes overall color presence over exact placement. Best when rendered pose/
 ⚡ Fast Match
 Quick color-based matching using smaller histograms. Faster but less accurate. Good for large datasets (10,000+ files).
 
-💡 Tip: Try different algorithms if results aren't satisfactory!"""
+💡 Tip: Try AI Perceptual first for best results, then Skin-Optimized!"""
         
         messagebox.showinfo("Algorithm Information", info_text)
     

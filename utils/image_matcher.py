@@ -20,6 +20,35 @@ try:
 except ImportError:
     SSIM_AVAILABLE = False
 
+try:
+    import torch
+    import torchvision.models as models
+    import torchvision.transforms as transforms
+    TORCH_AVAILABLE = True
+    
+    # Initialize model globally to avoid reloading
+    _ai_model = None
+    _ai_transform = None
+    
+    def _get_ai_model():
+        global _ai_model, _ai_transform
+        if _ai_model is None:
+            # Use ResNet18 for feature extraction (smaller, faster)
+            _ai_model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+            _ai_model.eval()
+            # Remove the final classification layer to get features
+            _ai_model = torch.nn.Sequential(*list(_ai_model.children())[:-1])
+            
+            _ai_transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        return _ai_model, _ai_transform
+    
+except ImportError:
+    TORCH_AVAILABLE = False
+
 
 # Algorithm weight configurations
 ALGORITHM_WEIGHTS = {
@@ -46,6 +75,11 @@ ALGORITHM_WEIGHTS = {
     "fast": {
         "color_histogram": 0.80,
         "perceptual_hash": 0.20
+    },
+    "ai_perceptual": {
+        "deep_features": 0.70,
+        "dominant_colors": 0.20,
+        "color_histogram": 0.10
     }
 }
 
@@ -148,6 +182,47 @@ def extract_edge_features(img):
     return edges, edge_density
 
 
+def extract_ai_features(img):
+    """Extract deep learning features using pre-trained ResNet."""
+    if not TORCH_AVAILABLE:
+        return None
+    
+    try:
+        model, transform = _get_ai_model()
+        
+        # Transform image
+        img_tensor = transform(img).unsqueeze(0)
+        
+        # Extract features
+        with torch.no_grad():
+            features = model(img_tensor)
+        
+        # Flatten to 1D vector
+        features = features.squeeze().numpy()
+        
+        # Normalize
+        features = features / (np.linalg.norm(features) + 1e-10)
+        
+        return features
+    except Exception as e:
+        return None
+
+
+def calculate_ai_similarity(features1, features2):
+    """Calculate cosine similarity between deep features."""
+    if features1 is None or features2 is None:
+        return 1.0
+    
+    try:
+        # Cosine distance
+        similarity = np.dot(features1, features2)
+        # Convert to distance (0 = identical, 1 = completely different)
+        distance = (1.0 - similarity) / 2.0
+        return max(0.0, min(distance, 1.0))
+    except:
+        return 1.0
+
+
 def calculate_ssim_similarity(img1, img2):
     """Calculate structural similarity between two images."""
     if not SSIM_AVAILABLE:
@@ -199,12 +274,12 @@ def get_image_features(image_path, algorithm="balanced"):
         if algorithm in ["balanced", "skin_optimized", "fast"]:
             features['ahash'] = imagehash.average_hash(img, hash_size=8)
         
-        if algorithm in ["balanced", "skin_optimized", "color_distribution", "deep_features", "fast"]:
+        if algorithm in ["balanced", "skin_optimized", "color_distribution", "deep_features", "fast", "ai_perceptual"]:
             dominant_colors, color_weights = extract_dominant_colors_fast(img_array, n_colors=12)
             features['dominant_colors'] = dominant_colors
             features['color_weights'] = color_weights
         
-        if algorithm in ["balanced", "color_distribution", "fast"]:
+        if algorithm in ["balanced", "color_distribution", "fast", "ai_perceptual"]:
             # Histogram bins based on algorithm
             bins = 16 if algorithm == "fast" else 24
             hist, _ = np.histogramdd(
@@ -228,6 +303,15 @@ def get_image_features(image_path, algorithm="balanced"):
             features['edges'] = edges
             features['edge_density'] = edge_density
             features['img_for_ssim'] = img  # Store for SSIM calculation
+        
+        # AI Perceptual algorithm
+        if algorithm == "ai_perceptual":
+            if TORCH_AVAILABLE:
+                ai_features = extract_ai_features(img)
+                features['ai_features'] = ai_features
+                features['ai_available'] = ai_features is not None
+            else:
+                features['ai_available'] = False
         
         return features, None
 
@@ -400,5 +484,60 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
             'hist_dist': hist_distance,
             'combined': combined_distance
         }
+    
+    # AI Perceptual algorithm
+    elif algorithm == "ai_perceptual":
+        if target_features.get('ai_available') and candidate_features.get('ai_available'):
+            # Deep learning features
+            ai_distance = calculate_ai_similarity(
+                target_features['ai_features'],
+                candidate_features['ai_features']
+            )
+            
+            # Color features
+            color_distance = color_palette_distance_fast(
+                target_features['dominant_colors'],
+                target_features['color_weights'],
+                candidate_features['dominant_colors'],
+                candidate_features['color_weights']
+            )
+            
+            hist1 = target_features['histogram']
+            hist2 = candidate_features['histogram']
+            hist_distance = np.sum((hist1 - hist2) ** 2 / (hist1 + hist2 + 1e-10)) / 2
+            
+            combined_distance = (
+                weights['deep_features'] * ai_distance +
+                weights['dominant_colors'] * color_distance +
+                weights['color_histogram'] * hist_distance
+            )
+            
+            metrics = {
+                'ai_dist': ai_distance,
+                'color_dist': color_distance,
+                'hist_dist': hist_distance,
+                'combined': combined_distance
+            }
+        else:
+            # Fallback to balanced if AI not available
+            hash_distance = 0.5
+            color_distance = color_palette_distance_fast(
+                target_features['dominant_colors'],
+                target_features['color_weights'],
+                candidate_features['dominant_colors'],
+                candidate_features['color_weights']
+            )
+            hist1 = target_features['histogram']
+            hist2 = candidate_features['histogram']
+            hist_distance = np.sum((hist1 - hist2) ** 2 / (hist1 + hist2 + 1e-10)) / 2
+            
+            combined_distance = 0.6 * color_distance + 0.4 * hist_distance
+            
+            metrics = {
+                'color_dist': color_distance,
+                'hist_dist': hist_distance,
+                'ai_unavailable': True,
+                'combined': combined_distance
+            }
     
     return combined_distance, metrics
