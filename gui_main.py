@@ -280,13 +280,14 @@ class SkinCopierGUI:
                 bg=self.colors['card'],
                 fg=self.colors['text']).pack(side=tk.LEFT)
         
-        self.algorithm_choice = tk.StringVar(value="balanced")
+        self.algorithm_choice = tk.StringVar(value="Render to Skin (Convert+Match) 🎯")
         algorithm_dropdown = ttk.Combobox(algo_frame,
                                          textvariable=self.algorithm_choice,
                                          state="readonly",
                                          width=25,
                                          font=("Segoe UI", 9))
         algorithm_dropdown['values'] = (
+            "Render to Skin (Convert+Match) 🎯",
             "Render Match (3D→2D) ⭐",
             "Balanced (Default)",
             "Skin-Optimized",
@@ -1308,6 +1309,7 @@ class SkinCopierGUI:
             
             # Map algorithm dropdown to internal name
             algo_map = {
+                "Render to Skin (Convert+Match) 🎯": "render_to_skin",
                 "Render Match (3D→2D) ⭐": "render_match",
                 "Balanced (Default)": "balanced",
                 "Skin-Optimized": "skin_optimized",
@@ -1623,7 +1625,10 @@ After installation, restart the application."""
         """Show information about matching algorithms."""
         info_text = """🔍 Matching Algorithms:
 
-⭐ Render Match (3D→2D) - BEST FOR YOUR USE CASE!
+🎯 Render to Skin (Convert+Match) - NEW & MOST ACCURATE!
+BEST FOR 3D RENDERS! First converts your 3D render to a 2D skin using region detection and pixel extraction (same as Converter tab), then compares ONLY the visible regions (front, top, left) pixel-by-pixel. This gives the most accurate matches because it directly compares textures that are actually visible in the render. Slightly slower than Render Match but much more accurate!
+
+⭐ Render Match (3D→2D) - FAST FOR RENDERS
 SPECIFICALLY DESIGNED for matching 3D rendered characters to 2D skin files! Extracts 24 dominant colors ignoring lighting/shading, analyzes spatial color patterns in a 4x4 grid. Does NOT use neural networks - uses color palette matching (70%) + spatial patterns (30%). FAST and designed for this exact problem!
 
 🎯 Balanced (Default)
@@ -1647,7 +1652,7 @@ Emphasizes overall color presence over exact placement. Best when rendered pose/
 ⚡ Fast Match
 Quick color-based matching using smaller histograms. Faster but less accurate. Good for large datasets (10,000+ files).
 
-💡 Tip: Try Render Match first - it's designed exactly for your use case!"""
+💡 Tip: Try Render to Skin first for best accuracy, or Render Match if you need speed!"""
         
         messagebox.showinfo("Algorithm Information", info_text)
     

@@ -127,6 +127,9 @@ ALGORITHM_WEIGHTS = {
     "render_match": {
         "color_palette": 0.70,
         "spatial_pattern": 0.30
+    },
+    "render_to_skin": {
+        "visible_regions": 1.0
     }
 }
 
@@ -182,6 +185,131 @@ def extract_render_features(img_array):
         'weights': weights,
         'spatial': np.array(spatial_features)
     }
+
+
+def convert_render_to_skin(render_img):
+    """Convert a 3D render to a 2D skin using pixel extraction."""
+    from PIL import Image
+    
+    # Convert to RGBA array
+    if isinstance(render_img, np.ndarray):
+        render_array = render_img
+    else:
+        render_array = np.array(render_img.convert('RGBA'))
+    
+    h, w = render_array.shape[:2]
+    
+    # Create blank 64x64 skin
+    skin_array = np.zeros((64, 64, 4), dtype=np.uint8)
+    
+    def extract_and_resize(source_region, target_shape):
+        """Extract region from render and resize to target shape."""
+        y1, y2, x1, x2 = source_region
+        y1, y2 = max(0, y1), min(h, y2)
+        x1, x2 = max(0, x1), min(w, x2)
+        region = render_array[y1:y2, x1:x2]
+        if region.size == 0 or y2 <= y1 or x2 <= x1:
+            return np.zeros(target_shape + (4,), dtype=np.uint8)
+        extracted = Image.fromarray(region).resize((target_shape[1], target_shape[0]), Image.Resampling.LANCZOS)
+        return np.array(extracted)
+    
+    def get_average_color(region_array):
+        """Get average color from a region."""
+        if region_array.size == 0:
+            return np.array([0, 0, 0, 255], dtype=np.uint8)
+        mask = region_array[:, :, 3] > 128
+        if not mask.any():
+            return np.array([0, 0, 0, 255], dtype=np.uint8)
+        avg = np.mean(region_array[mask], axis=0).astype(np.uint8)
+        avg[3] = 255
+        return avg
+    
+    # Region detection
+    head_top, head_bottom = int(h * 0.05), int(h * 0.35)
+    head_left, head_right = int(w * 0.35), int(w * 0.65)
+    body_top, body_bottom = int(h * 0.35), int(h * 0.70)
+    body_left, body_right = int(w * 0.35), int(w * 0.65)
+    leg_top, leg_bottom = int(h * 0.70), int(h * 0.95)
+    leg_left, leg_right = int(w * 0.35), int(w * 0.65)
+    
+    # HEAD
+    front_head = extract_and_resize((head_top + int((head_bottom-head_top)*0.4), head_bottom - int((head_bottom-head_top)*0.2),
+                                    head_left + int((head_right-head_left)*0.3), head_right - int((head_right-head_left)*0.3)), (8, 8))
+    skin_array[8:16, 8:16] = front_head
+    
+    left_head = extract_and_resize((head_top + int((head_bottom-head_top)*0.4), head_bottom - int((head_bottom-head_top)*0.2),
+                                   head_left, head_left + int((head_right-head_left)*0.3)), (8, 8))
+    skin_array[8:16, 16:24] = left_head
+    
+    top_head = extract_and_resize((head_top, head_top + int((head_bottom-head_top)*0.3),
+                                  head_left + int((head_right-head_left)*0.3), head_right - int((head_right-head_left)*0.3)), (8, 8))
+    skin_array[0:8, 8:16] = top_head
+    
+    skin_array[8:16, 0:8] = np.fliplr(left_head)
+    avg_head = get_average_color(front_head)
+    skin_array[8:16, 24:32] = avg_head
+    skin_array[16:24, 8:16] = (avg_head * 0.8).astype(np.uint8)
+    
+    # BODY
+    front_body = extract_and_resize((body_top + int((body_bottom-body_top)*0.1), body_bottom,
+                                    body_left + int((body_right-body_left)*0.25), body_right - int((body_right-body_left)*0.25)), (12, 8))
+    skin_array[20:32, 20:28] = front_body
+    
+    left_body = extract_and_resize((body_top + int((body_bottom-body_top)*0.1), body_bottom,
+                                   body_left, body_left + int((body_right-body_left)*0.25)), (12, 4))
+    skin_array[20:32, 16:20] = left_body
+    skin_array[20:32, 28:32] = np.fliplr(left_body)
+    
+    avg_body = get_average_color(front_body)
+    skin_array[20:32, 32:40] = avg_body
+    
+    # ARMS
+    right_arm = extract_and_resize((body_top + int((body_bottom-body_top)*0.1), body_bottom,
+                                   body_left - int((body_right-body_left)*0.15), body_left), (12, 4))
+    skin_array[20:32, 44:48] = right_arm
+    skin_array[20:32, 36:40] = right_arm
+    
+    # LEGS
+    right_leg = extract_and_resize((leg_top, leg_bottom,
+                                   leg_left + int((leg_right-leg_left)*0.2), leg_left + int((leg_right-leg_left)*0.4)), (12, 4))
+    skin_array[20:32, 4:8] = right_leg
+    
+    left_leg = extract_and_resize((leg_top, leg_bottom,
+                                  leg_left + int((leg_right-leg_left)*0.6), leg_left + int((leg_right-leg_left)*0.8)), (12, 4))
+    skin_array[20:32, 20:24] = left_leg
+    
+    return Image.fromarray(skin_array, 'RGBA')
+
+
+def extract_visible_skin_regions(skin_array):
+    """Extract only the visible regions (front, top, left) from a skin for comparison."""
+    # Define visible region masks for Minecraft skin UV map
+    visible_pixels = []
+    
+    # Head front (8x8)
+    visible_pixels.append(skin_array[8:16, 8:16])
+    # Head left (8x8)
+    visible_pixels.append(skin_array[8:16, 16:24])
+    # Head top (8x8)
+    visible_pixels.append(skin_array[0:8, 8:16])
+    
+    # Body front (12x8)
+    visible_pixels.append(skin_array[20:32, 20:28])
+    # Body left (12x4)
+    visible_pixels.append(skin_array[20:32, 28:32])
+    
+    # Right arm front (12x4)
+    visible_pixels.append(skin_array[20:32, 44:48])
+    # Left arm front (12x4)
+    visible_pixels.append(skin_array[20:32, 36:40])
+    
+    # Right leg front (12x4)
+    visible_pixels.append(skin_array[20:32, 4:8])
+    # Left leg front (12x4)
+    visible_pixels.append(skin_array[20:32, 20:24])
+    
+    # Concatenate all visible regions
+    return np.concatenate([region.flatten() for region in visible_pixels])
 
 
 def color_palette_distance_fast(colors1, weights1, colors2, weights2):
@@ -449,6 +577,20 @@ def get_image_features(image_path, algorithm="balanced"):
             features['render_colors'] = render_feat['colors']
             features['render_weights'] = render_feat['weights']
             features['render_spatial'] = render_feat['spatial']
+        
+        # Render to Skin algorithm (convert then compare visible regions)
+        if algorithm == "render_to_skin":
+            # Check if this is a 64x64 skin (don't convert) or a render (convert first)
+            if img.size == (64, 64):
+                # Already a skin format, just extract visible regions
+                skin_array = np.array(img.convert('RGBA'))
+                features['visible_regions'] = extract_visible_skin_regions(skin_array)
+            else:
+                # Convert render to skin format first
+                converted_skin = convert_render_to_skin(img)
+                converted_array = np.array(converted_skin.convert('RGBA'))
+                # Extract only visible regions
+                features['visible_regions'] = extract_visible_skin_regions(converted_array)
         
         return features, None
 
@@ -765,6 +907,24 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
         metrics = {
             'palette_dist': palette_distance,
             'spatial_dist': spatial_distance,
+            'combined': combined_distance
+        }
+    
+    # Render to Skin algorithm (convert then compare visible regions)
+    elif algorithm == "render_to_skin":
+        # Extract visible regions from both images
+        target_regions = target_features['visible_regions']
+        candidate_regions = candidate_features['visible_regions']
+        
+        # Calculate pixel-wise distance for visible regions only
+        # Use Euclidean distance in RGBA space
+        diff = target_regions.astype(np.float32) - candidate_regions.astype(np.float32)
+        pixel_distance = np.sqrt(np.mean(diff ** 2)) / 255.0  # Normalize to 0-1
+        
+        combined_distance = weights['visible_regions'] * pixel_distance
+        
+        metrics = {
+            'pixel_dist': pixel_distance,
             'combined': combined_distance
         }
     
