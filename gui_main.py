@@ -588,12 +588,16 @@ class SkinCopierGUI:
                 input_image,
                 search_dir,
                 top_n=self.top_n_matches.get(),
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                cancel_check=lambda: self.should_cancel
             )
             
             self.is_processing = False
             
-            if error:
+            if self.should_cancel:
+                self.matcher_log("\n❌ Operation cancelled by user")
+                messagebox.showinfo("Cancelled", "Matching operation was cancelled.")
+            elif error:
                 messagebox.showerror("Error", error)
                 self.matcher_log(f"\nError: {error}")
             elif matches:
