@@ -181,6 +181,7 @@ class SkinCopierGUI:
         img_frame.pack(fill=tk.X, pady=(5, 0))
         
         self.input_image_path = tk.StringVar()
+        self.input_image_path.trace_add('write', lambda *args: self.on_input_path_changed())
         self.input_image_entry = tk.Entry(img_frame, 
                         textvariable=self.input_image_path, 
                         font=("Segoe UI", 10),
@@ -310,6 +311,22 @@ class SkinCopierGUI:
                            cursor="hand2")
         info_btn.pack(side=tk.LEFT, padx=5)
         info_btn.bind("<Button-1>", self.show_algorithm_info)
+        
+        # Preview Converted Image button (hidden by default, shown only for render_to_skin)
+        self.preview_btn = tk.Button(algo_frame,
+                                     text="👁️ Preview Conversion",
+                                     command=self.preview_converted_image,
+                                     font=("Segoe UI", 9),
+                                     bg=self.colors['primary'],
+                                     fg="white",
+                                     relief=tk.FLAT,
+                                     padx=12,
+                                     pady=4,
+                                     cursor="hand2",
+                                     state=tk.DISABLED)
+        # Start packed since render_to_skin is default
+        self.preview_btn.pack(side=tk.LEFT, padx=8)
+        self._add_button_hover(self.preview_btn, self.colors['primary_dark'], 'white', flat=True)
         
         # AI Test button (hidden by default)
         self.ai_test_btn = tk.Button(algo_frame,
@@ -1552,6 +1569,18 @@ class SkinCopierGUI:
             self.ai_test_btn.pack(side=tk.LEFT, padx=8)
         else:
             self.ai_test_btn.pack_forget()
+        
+        # Show/hide preview button for render_to_skin algorithm
+        if "Render to Skin" in selected and "Convert" in selected:
+            input_path = self.input_image_path.get()
+            if input_path and os.path.exists(input_path):
+                self.preview_btn.pack(side=tk.LEFT, padx=8)
+                self.preview_btn.config(state=tk.NORMAL)
+            else:
+                self.preview_btn.pack(side=tk.LEFT, padx=8)
+                self.preview_btn.config(state=tk.DISABLED)
+        else:
+            self.preview_btn.pack_forget()
     
     def test_ai_availability(self):
         """Test if PyTorch is available and AI algorithm is working."""
@@ -1655,6 +1684,102 @@ Quick color-based matching using smaller histograms. Faster but less accurate. G
 💡 Tip: Try Render to Skin first for best accuracy, or Render Match if you need speed!"""
         
         messagebox.showinfo("Algorithm Information", info_text)
+    
+    def on_input_path_changed(self):
+        """Enable/disable preview button based on input path and algorithm."""
+        selected = self.algorithm_choice.get()
+        input_path = self.input_image_path.get()
+        
+        # Only show preview button for render_to_skin algorithm
+        if "Render to Skin" in selected and "Convert" in selected:
+            if input_path and os.path.exists(input_path):
+                self.preview_btn.config(state=tk.NORMAL)
+                self.preview_btn.pack(side=tk.LEFT, padx=8)
+            else:
+                self.preview_btn.config(state=tk.DISABLED)
+                self.preview_btn.pack(side=tk.LEFT, padx=8)
+        else:
+            self.preview_btn.pack_forget()
+    
+    def preview_converted_image(self):
+        """Show a preview of the converted input image."""
+        input_path = self.input_image_path.get()
+        if not input_path or not os.path.exists(input_path):
+            messagebox.showerror("Error", "No valid input image selected!")
+            return
+        
+        try:
+            # Import the conversion function
+            from utils.image_matcher import convert_render_to_skin
+            
+            # Load the image
+            img = Image.open(input_path)
+            
+            # Check if it's already a skin or needs conversion
+            if img.size == (64, 64):
+                preview_img = img
+                title = "Input Image (Already 64x64 Skin Format)"
+            else:
+                # Convert render to skin
+                preview_img = convert_render_to_skin(img)
+                title = "Converted Input Image (3D Render → 2D Skin)"
+            
+            # Create a preview window
+            preview_window = tk.Toplevel(self.root)
+            preview_window.title(title)
+            preview_window.configure(bg=self.colors['bg'])
+            preview_window.geometry("400x500")
+            
+            # Info label
+            info_label = tk.Label(preview_window,
+                                text=title,
+                                font=("Segoe UI", 11, "bold"),
+                                bg=self.colors['bg'],
+                                fg=self.colors['text'])
+            info_label.pack(pady=10)
+            
+            # Show the image (scaled up for visibility)
+            scale = 4  # Scale 64x64 to 256x256
+            display_img = preview_img.resize((64*scale, 64*scale), Image.NEAREST)
+            photo = ImageTk.PhotoImage(display_img)
+            
+            img_label = tk.Label(preview_window, image=photo, bg=self.colors['bg'])
+            img_label.image = photo  # Keep a reference
+            img_label.pack(pady=10)
+            
+            # Description
+            if img.size == (64, 64):
+                desc = "This image is already in 64x64 skin format.\nNo conversion needed."
+            else:
+                desc = f"Original size: {img.size[0]}x{img.size[1]}\n"
+                desc += "Converted to 64x64 skin format using region detection.\n"
+                desc += "Only visible regions (front/top/left) will be compared."
+            
+            desc_label = tk.Label(preview_window,
+                                text=desc,
+                                font=("Segoe UI", 9),
+                                bg=self.colors['bg'],
+                                fg=self.colors['text_secondary'],
+                                justify=tk.CENTER)
+            desc_label.pack(pady=10)
+            
+            # Close button
+            close_btn = tk.Button(preview_window,
+                                text="Close",
+                                command=preview_window.destroy,
+                                font=("Segoe UI", 10),
+                                bg=self.colors['primary'],
+                                fg="white",
+                                relief=tk.FLAT,
+                                padx=20,
+                                pady=8,
+                                cursor="hand2")
+            close_btn.pack(pady=10)
+            self._add_button_hover(close_btn, self.colors['primary_dark'], 'white', flat=True)
+            
+        except Exception as e:
+            messagebox.showerror("Preview Error", f"Failed to preview image:\n{str(e)}")
+            self.debug_log(f"Preview error: {str(e)}")
     
     def open_discord(self):
         try:
