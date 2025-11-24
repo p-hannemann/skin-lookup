@@ -1,169 +1,84 @@
 # Skin Copier & Matcher
 
-A powerful tool for finding Minecraft skins in Prism Launcher's skin cache. Match a rendered skin image against cached skin files and automatically identify the matching texture.
+Find and match Minecraft skins in Prism Launcher's cache using AI-powered image comparison. Identify the original skin texture from a 3D rendered character image.
 
-**Primary Use Case**: Find the original skin texture file from a 3D rendered character image by searching through Prism Launcher's skin cache.
+## ✨ Features
 
-## Features
+- **🔍 Smart Matching** - Multi-algorithm comparison (color histograms, perceptual hashing, dominant colors)
+  ![Skin Matcher Interface](https://private-user-images.githubusercontent.com/62304958/517998841-591bb810-efe9-4f5e-a7f3-34d36ca3d13f.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjM5NzI2MjEsIm5iZiI6MTc2Mzk3MjMyMSwicGF0aCI6Ii82MjMwNDk1OC81MTc5OTg4NDEtNTkxYmI4MTAtZWZlOS00ZjVlLWE3ZjMtMzRkMzZjYTNkMTNmLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTExMjQlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMTI0VDA4MTg0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTY5ZTAwMjMwNTFhZjY2NGE2MmYzMmIxN2M0M2IwZmY5Yzc4NWQwNzJlMjEzOWU3YzBhOTVlYTc2ZTlkOGRmMjkmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.V1Kij_DULgs3TOECb4271R7XD6Dq1KaC2l_PQ0o2CsU)
 
-### 🔍 Skin Matcher
-- **Prism Launcher Integration**: Search through Prism Launcher's skin cache
-- **Smart Image Matching**: Compare a rendered skin image against thousands of cached skin files
-- **Multiple Algorithms**: Uses color histograms, dominant colors, and perceptual hashing
-- **Top N Results**: Find the best 1-20 matches
-- **Fast Processing**: Optimized for large directories (10,000+ files)
-- **Auto-Copy Results**: Automatically copies matched skins to output folder
+- **📂 Batch Processing** - Copy and rename entire directories with .png extension
+  ![File Copier Interface](https://private-user-images.githubusercontent.com/62304958/517998956-699b9902-78e5-4bd7-9f8e-b133ae3fd0ac.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjM5NzI2MjEsIm5iZiI6MTc2Mzk3MjMyMSwicGF0aCI6Ii82MjMwNDk1OC81MTc5OTg5NTYtNjk5Yjk5MDItNzhlNS00YmQ3LTlmOGUtYjEzM2FlM2ZkMGFjLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTExMjQlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMTI0VDA4MTg0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTVmZjQ1OThlM2RjNjc4ZDkwOWU2MmMzMGFlODIzMTNiM2I3M2MzMGQ5YWE0MWNjMDcyODQzNzlhMWM4MDE3YWEmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.dkFfLXnp1ZyfAEBQN_EK1nxPeShnzn8-2gErsjbwonE)
+- **📋 Skin Browser** - Browse Cached Skin files with or without file extensions
+- **🖼️ Advanced Viewer** - Browse 10,000+ images with tree navigation, sorting, and jump controls
+  ![Image Viewer Interface](https://private-user-images.githubusercontent.com/62304958/517999138-8b25862f-681d-4b2b-b636-1fb8de8f570e.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NjM5NzI2MjEsIm5iZiI6MTc2Mzk3MjMyMSwicGF0aCI6Ii82MjMwNDk1OC81MTc5OTkxMzgtOGIyNTg2MmYtNjgxZC00YjJiLWI2MzYtMWZiOGRlOGY1NzBlLnBuZz9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNTExMjQlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjUxMTI0VDA4MTg0MVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTM4MzlmN2ViNThlMWE2MmNmNDIwYTUxNmM3ODdmZDdiOGFjZTc0MWJmNGY2ZTE3NTA5NmE3OWQ3Y2ZjZmNhZjYmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0In0.Xv5sgiWvckbjjOhk-5nR3AIf-w32ySTwWgymivZMU9s)
+- **⚡ Real-time Progress** - Live updates with ETA and cancellation support
+- **🎯 Prism Launcher Integration** - Auto-detects skin cache location
 
-### 📁 File Copier
-- **Batch Processing**: Recursively copy entire directories
-- **Auto Extension**: Adds `.png` extension to all files
-- **Merge Mode**: Option to flatten directory structure
-- **Progress Tracking**: Real-time progress with ETA
-- **Cancellation**: Stop processing anytime with cleanup
+## 📥 Installation
 
-### 🖼️ Image Viewer
-- **Built-in Viewer**: Browse matched skins or any image directory
-- **Keyboard Navigation**: Arrow keys for quick browsing
-- **Large Collections**: Handles 10,000+ images smoothly
-- **Explorer Integration**: Open file location in Windows Explorer
-- **Auto-resize**: Images scale to fit window
+### Windows Executable (Recommended)
+1. Download `SkinCopier-[version].exe` from [Releases](https://github.com/p-hannemann/skin-lookup/releases)
+2. Run the executable - no installation needed!
 
-## Installation
+> **Note:** Windows SmartScreen may warn about unsigned software. Click "More info" → "Run anyway". The app is open source and safe.
 
-### Option 1: Download Executable (Windows)
-1. Go to [Releases](https://github.com/p-hannemann/skin-lookup/releases)
-2. Download `SkinCopier-[version].exe`
-3. Run the executable - no installation needed!
-
-**Note:** Windows SmartScreen may show a warning for new downloads. This is normal for unsigned software.
-- Click "More info" then "Run anyway" to proceed
-- The software is open source and safe to run
-- Signing Certificates are expensive so this has to be like this for now 🙃
-
-### Option 2: Run from Source
+### Run from Source
 ```bash
-# Clone the repository
 git clone https://github.com/p-hannemann/skin-lookup.git
 cd skin-lookup
-
-# Install dependencies
 pip install pillow numpy imagehash
-
-# Run the application
 python gui_main.py
 ```
 
-## Usage
+## 🚀 Quick Start
 
-### Skin Matcher Tab
+### Skin Matcher
+1. Select rendered skin image (screenshot/render)
+2. Browse to Prism Launcher skin cache (auto-suggested)
+3. Set number of matches (1-20)
+4. Click "Find Matching Skins"
+5. View results in built-in viewer
 
-1. **Select Input Image**: Choose the rendered skin image (screenshot from Minecraft/Prism Launcher)
-2. **Select Search Directory**: Navigate to Prism Launcher's skin cache folder:
-   - Default location: `C:\Users\[YourUsername]\AppData\Roaming\PrismLauncher\assets\skins`
-   - Or find it in your Prism Launcher installation directory: `[PrismLauncher]\assets\skins`
-3. **Set Number of Matches**: Select how many top matches to find (1-20)
-4. **Click "Find Matching Skins"**: Start the search
-5. **View Results**: Matched skins are copied to `./output/` folder
-6. **Click "View Matches"**: Browse the matched skins in the built-in viewer
+**Cache Locations:**
+- Windows: `%APPDATA%\PrismLauncher\assets\skins`
+- Linux: `~/.local/share/PrismLauncher/assets/skins`
+- macOS: `~/Library/Application Support/PrismLauncher/assets/skins`
 
-**Finding Your Prism Launcher Skin Cache:**
+### Image Viewer Features
+- **Folder Tree** - Navigate hierarchical directory structure
+- **Sorting** - By path, creation date, or modification date
+- **Jump Controls** - Jump to specific image or subfolder position
+- **Dual Counter** - Overall position (72/35545) + folder position (2/70)
+- **Keyboard Navigation** - Arrow keys for quick browsing
+- **Windows Integration** - Explorer, Paint, and default viewer buttons
+
+
+
+## 🔧 Technical Details
+
+**Matching Algorithm:**
+- Dominant Colors (60%) - Color palette comparison
+- Color Histogram (35%) - Distribution analysis
+- Perceptual Hash (5%) - Structural similarity
+
+**Requirements:** Python 3.11+, Pillow, NumPy, ImageHash
+
+**Project Structure:**
 ```
-Windows: C:\Users\[Username]\AppData\Roaming\PrismLauncher\assets\skins
-Linux: ~/.local/share/PrismLauncher/assets/skins
-macOS: ~/Library/Application Support/PrismLauncher/assets/skins
-```
-
-**Tips:**
-- Works best with clear, front-facing skin renders
-- The skin cache may contain thousands of files - be patient during first search
-- Progress and ETA are shown in real-time
-- Matched files are named with hash values - use the viewer to identify them visually
-
-### File Copier Tab
-
-1. **Select Input Folder**: Choose the directory to copy
-2. **Optional: Enable Merge Mode**: Flatten all files into a single folder
-3. **Click "Copy and Add .png Extension"**: Start copying
-4. **Output**: Files are copied to `[input_folder]_png/`
-5. **Click "View Output Images"**: Browse the copied files
-
-**Tips:**
-- Output folder is created automatically
-- If output exists, you'll be asked to overwrite
-- Cancel anytime - partial work is cleaned up
-
-### Image Viewer
-
-- **Navigation**: Use arrow keys or click Previous/Next buttons
-- **Explorer**: Click "Open in Explorer" to see file location
-- **Large Collections**: Images load in background, UI stays responsive
-
-
-
-## Building from Source
-
-### Create Executable with PyInstaller
-```bash
-pip install pyinstaller
-pyinstaller --onefile --noconsole --name="SkinCopier" gui_main.py
+config/    - Shared styling and configuration
+ui/        - Interface components and windows
+utils/     - Business logic and utilities
 ```
 
-The executable will be in `dist/SkinCopier.exe`
+## 📝 Contributing
 
-## Project Structure
+Contributions welcome! Report bugs, suggest features, or submit PRs.
 
-```
-.
-├── gui_main.py         # Main GUI application
-├── image_matcher.py    # Image comparison algorithms
-├── skin_matcher.py     # Skin matching operations
-├── file_utils.py       # File copying utilities
-├── image_viewer.py     # Image viewer window
-└── .github/
-    └── workflows/
-        └── build-exe.yml  # Automatic builds
-```
+## 👤 Credits
 
-## Requirements
+**Made by SoulReturns** | Discord: `soulreturns`
 
-- Python 3.11+
-- PIL/Pillow
-- NumPy
-- ImageHash
+## 📄 License
 
-## How It Works
-
-### Prism Launcher Skin Cache
-
-Prism Launcher stores downloaded Minecraft skins in a cache folder using hash-based filenames (e.g., `3e0d61a212d478a594f990a99c5683ca0f1b9b98`). These files have no extension and are stored in subdirectories.
-
-This tool helps you:
-1. Take a screenshot or render of a Minecraft character
-2. Find the matching skin texture file in Prism Launcher's cache
-3. Extract and view the original skin texture
-
-### Image Matching Algorithm
-
-The matcher uses a weighted combination of three techniques:
-
-1. **Dominant Colors (60%)**: Extracts and compares the most prominent colors
-2. **Color Histogram (35%)**: Analyzes overall color distribution
-3. **Perceptual Hash (5%)**: Checks structural similarity
-
-This balanced approach works well for matching rendered 3D character images to flat skin texture files stored in Prism Launcher's cache.
-
-## Contributing
-
-Contributions welcome! Feel free to:
-- Report bugs
-- Suggest features
-- Submit pull requests
-
-## Credits
-
-☕ Made by **SoulReturns**  
-Discord: **soulreturns**
-
-## License
-
-This project is open source and available under the MIT License.
+MIT License - See [LICENSE](LICENSE) for details
