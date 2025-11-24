@@ -59,22 +59,24 @@ try:
     def _get_mobile_model():
         global _mobile_model, _mobile_transform
         if _mobile_model is None:
-            # MobileNetV2 - better for small/texture images, multi-scale features
-            _mobile_model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+            # Use EfficientNet-B0 - faster and better for textures than MobileNet
+            _mobile_model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1)
             _mobile_model.eval()
-            # Extract features from multiple layers for better texture matching
-            _mobile_model = torch.nn.Sequential(*list(_mobile_model.children())[:-1])
+            # Remove classifier to get features
+            _mobile_model.classifier = torch.nn.Identity()
             
-            # Move to GPU if available
+            # Move to GPU if available and use half precision for 2x speed
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             _mobile_model = _mobile_model.to(device)
-            print(f"[INFO] MobileNetV2 model loaded on device: {device}")
+            if device.type == 'cuda':
+                _mobile_model = _mobile_model.half()  # FP16 for faster inference
+            print(f"[INFO] EfficientNet-B0 model loaded on device: {device} (FP16: {device.type == 'cuda'})")
             
             _mobile_transform = transforms.Compose([
-                # Keep original aspect ratio better, use bilinear for smoother features
+                # EfficientNet uses 224x224 input
                 transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BILINEAR),
                 transforms.ToTensor(),
-                # Standard ImageNet normalization works well for MobileNet
+                # Standard ImageNet normalization
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
         return _mobile_model, _mobile_transform
@@ -258,7 +260,7 @@ def extract_ai_features(img):
 
 
 def extract_mobile_features(img):
-    """Extract features using MobileNetV2 - better for texture matching."""
+    """Extract features using EfficientNet-B0 - optimized for texture matching."""
     if not TORCH_AVAILABLE:
         return None
     
@@ -271,17 +273,18 @@ def extract_mobile_features(img):
         if img.mode != 'RGB':
             img = img.convert('RGB')
         
-        # Transform image and move to same device as model
+        # Transform image and move to same device/dtype as model
         img_tensor = transform(img).unsqueeze(0)
         device = next(model.parameters()).device
-        img_tensor = img_tensor.to(device)
+        dtype = next(model.parameters()).dtype
+        img_tensor = img_tensor.to(device, dtype=dtype)
         
-        # Extract features
-        with torch.no_grad():
+        # Extract features with optimizations
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
             features = model(img_tensor)
         
         # Flatten to 1D vector and move to CPU for numpy conversion
-        features = features.squeeze().cpu().numpy()
+        features = features.squeeze().cpu().float().numpy()
         
         # Normalize
         features = features / (np.linalg.norm(features) + 1e-10)

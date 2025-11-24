@@ -28,7 +28,7 @@ class SkinCopierGUI:
         self.root = root
         self.verbose = verbose
         self.root.title(f"{__app_name__} v{__version__}")
-        self.root.geometry("850x600")
+        self.root.geometry("850x900")
         self.root.resizable(True, True)
         self.is_processing = False
         self.should_cancel = False
@@ -265,7 +265,7 @@ class SkinCopierGUI:
             "Balanced (Default)",
             "Skin-Optimized",
             "AI Perceptual (ResNet18)",
-            "AI Mobile (MobileNetV2)",
+            "AI Mobile (EfficientNet)",
             "Deep Features",
             "Color Distribution",
             "Fast Match"
@@ -917,7 +917,7 @@ class SkinCopierGUI:
                 "Balanced (Default)": "balanced",
                 "Skin-Optimized": "skin_optimized",
                 "AI Perceptual (ResNet18)": "ai_perceptual",
-                "AI Mobile (MobileNetV2)": "ai_mobile",
+                "AI Mobile (EfficientNet)": "ai_mobile",
                 "Deep Features": "deep_features",
                 "Color Distribution": "color_distribution",
                 "Fast Match": "fast"
@@ -1222,8 +1222,8 @@ Designed for Minecraft skins. Detects 64x64/64x32 textures, analyzes texture pat
 🤖 AI Perceptual (ResNet18)
 Uses ResNet18 deep learning for feature extraction. Focuses on deep semantic features (50%), colors (35%), and histogram (15%). Good for general image matching. Requires PyTorch + GPU.
 
-📱 AI Mobile (MobileNetV2) - RECOMMENDED FOR 3D→2D
-Uses MobileNetV2 optimized for texture matching. Better at matching 3D rendered views to flat 2D skins. Weights: mobile features (60%), colors (25%), histogram (10%), hash (5%). BEST for matching rendered character images to skin textures! Requires PyTorch + GPU.
+📱 AI Mobile (EfficientNet) - RECOMMENDED FOR 3D→2D
+Uses EfficientNet-B0 with FP16 optimization for fast texture matching. Better at matching 3D rendered views to flat 2D skins. Weights: mobile features (60%), colors (25%), histogram (10%), hash (5%). BEST for matching rendered character images to skin textures! Requires PyTorch + GPU.
 
 🔬 Deep Features
 Uses edge detection and structural similarity (SSIM). Focuses on shapes and patterns rather than colors. Good for similar armor/clothing styles.
