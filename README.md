@@ -32,8 +32,13 @@ A powerful tool for finding Minecraft skins in Prism Launcher's skin cache. Matc
 
 ### Option 1: Download Executable (Windows)
 1. Go to [Releases](https://github.com/p-hannemann/skin-lookup/releases)
-2. Download `SkinCopier.exe`
+2. Download `SkinCopier-[version].exe`
 3. Run the executable - no installation needed!
+
+**Note:** Windows SmartScreen may show a warning for new downloads. This is normal for unsigned software.
+- Click "More info" then "Run anyway" to proceed
+- The software is open source and safe to run
+- Signing Certificates are expensive so this has to be like this for now 🙃
 
 ### Option 2: Run from Source
 ```bash
