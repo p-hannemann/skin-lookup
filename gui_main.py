@@ -245,6 +245,42 @@ class SkinCopierGUI:
                             borderwidth=1)
         spinner.pack(side=tk.LEFT, padx=8)
         
+        # Algorithm selection
+        algo_frame = tk.Frame(frame_input, bg=self.colors['card'])
+        algo_frame.pack(fill=tk.X, pady=(15, 0))
+        
+        tk.Label(algo_frame, 
+                text="Algorithm:", 
+                font=("Segoe UI", 9),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(side=tk.LEFT)
+        
+        self.algorithm_choice = tk.StringVar(value="balanced")
+        algorithm_dropdown = ttk.Combobox(algo_frame,
+                                         textvariable=self.algorithm_choice,
+                                         state="readonly",
+                                         width=25,
+                                         font=("Segoe UI", 9))
+        algorithm_dropdown['values'] = (
+            "Balanced (Default)",
+            "Skin-Optimized",
+            "Deep Features",
+            "Color Distribution",
+            "Fast Match"
+        )
+        algorithm_dropdown.current(0)
+        algorithm_dropdown.pack(side=tk.LEFT, padx=8)
+        
+        # Algorithm info button
+        info_btn = tk.Label(algo_frame,
+                           text="ℹ️",
+                           font=("Segoe UI", 12),
+                           bg=self.colors['card'],
+                           fg=self.colors['primary'],
+                           cursor="hand2")
+        info_btn.pack(side=tk.LEFT, padx=5)
+        info_btn.bind("<Button-1>", self.show_algorithm_info)
+        
         # Buttons frame
         btn_frame = tk.Frame(content_card, bg=self.colors['card'], pady=15)
         btn_frame.pack(fill=tk.X, padx=20)
@@ -836,12 +872,25 @@ class SkinCopierGUI:
                 self.matcher_log(f"Hypixel Wiki: {input_image}")
             
             self.matcher_log(f"Search directory: {search_dir}")
+            
+            # Map algorithm dropdown to internal name
+            algo_map = {
+                "Balanced (Default)": "balanced",
+                "Skin-Optimized": "skin_optimized",
+                "Deep Features": "deep_features",
+                "Color Distribution": "color_distribution",
+                "Fast Match": "fast"
+            }
+            algorithm = algo_map.get(self.algorithm_choice.get(), "balanced")
+            self.debug_log(f"Using algorithm: {algorithm}")
+            self.matcher_log(f"Algorithm: {self.algorithm_choice.get()}")
             self.matcher_log(f"Finding top {self.top_n_matches.get()} matches...\n")
             
             matches, error = find_matching_skins(
                 actual_image_path,
                 search_dir,
                 top_n=self.top_n_matches.get(),
+                algorithm=algorithm,
                 progress_callback=progress_callback,
                 cancel_check=lambda: self.should_cancel
             )
@@ -861,7 +910,26 @@ class SkinCopierGUI:
                 
                 for i, (distance, path, metrics) in enumerate(matches, 1):
                     self.matcher_log(f"{i}. {os.path.basename(path)}")
-                    self.matcher_log(f"   Distance: {distance:.6f} | Hash: {metrics['hash_dist']:.1f} | Colors: {metrics['color_dist']:.4f}")
+                    
+                    # Format metrics based on what's available
+                    metric_parts = [f"Distance: {distance:.6f}"]
+                    
+                    if 'hash_dist' in metrics:
+                        metric_parts.append(f"Hash: {metrics['hash_dist']:.1f}")
+                    if 'color_dist' in metrics:
+                        metric_parts.append(f"Colors: {metrics['color_dist']:.4f}")
+                    if 'hist_dist' in metrics:
+                        metric_parts.append(f"Hist: {metrics['hist_dist']:.4f}")
+                    if 'texture_dist' in metrics:
+                        metric_parts.append(f"Texture: {metrics['texture_dist']:.4f}")
+                    if 'edge_dist' in metrics:
+                        metric_parts.append(f"Edges: {metrics['edge_dist']:.4f}")
+                    if 'ssim_dist' in metrics:
+                        metric_parts.append(f"SSIM: {metrics['ssim_dist']:.4f}")
+                    if 'dim_match' in metrics:
+                        metric_parts.append(f"DimMatch: {metrics['dim_match']:.2f}")
+                    
+                    self.matcher_log(f"   {' | '.join(metric_parts)}")
                 
                 # Copy matches to output
                 output_dir = os.path.join(os.getcwd(), "output")
@@ -1000,6 +1068,29 @@ class SkinCopierGUI:
             elif method == "wiki":
                 self.input_image_entry.insert(0, "Enter Hypixel Wiki URL (e.g., https://wiki.hypixel.net/Minos_Inquisitor)")
                 self.input_image_entry.config(fg='gray')
+    
+    def show_algorithm_info(self, event=None):
+        """Show information about matching algorithms."""
+        info_text = """🔍 Matching Algorithms:
+
+🎯 Balanced (Default)
+Optimal for most cases. Uses dominant colors (60%), color histogram (35%), and perceptual hashing (5%). Best general-purpose algorithm.
+
+🎨 Skin-Optimized
+Designed for Minecraft skins. Detects 64x64/64x32 textures, analyzes texture patterns, and focuses on skin-specific features. Best for finding exact skin matches.
+
+🔬 Deep Features
+Uses edge detection and structural similarity (SSIM). Focuses on shapes and patterns rather than colors. Good for similar armor/clothing styles.
+
+🌈 Color Distribution
+Emphasizes overall color presence over exact placement. Best when rendered pose/angle differs significantly from skin layout.
+
+⚡ Fast Match
+Quick color-based matching using smaller histograms. Faster but less accurate. Good for large datasets (10,000+ files).
+
+💡 Tip: Try different algorithms if results aren't satisfactory!"""
+        
+        messagebox.showinfo("Algorithm Information", info_text)
     
     def open_discord(self):
         try:

@@ -18,7 +18,7 @@ def collect_all_files(root_dir):
     return all_files
 
 
-def find_matching_skins(target_image_path, search_directory, top_n=5, progress_callback=None, cancel_check=None):
+def find_matching_skins(target_image_path, search_directory, top_n=5, algorithm="balanced", progress_callback=None, cancel_check=None):
     """
     Find the top N matching skins for a target image.
     
@@ -26,6 +26,7 @@ def find_matching_skins(target_image_path, search_directory, top_n=5, progress_c
         target_image_path: Path to the input image to match
         search_directory: Directory containing skin files to search
         top_n: Number of top matches to return
+        algorithm: Matching algorithm to use ("balanced", "skin_optimized", "deep_features", "color_distribution", "fast")
         progress_callback: Optional callback function(current, total, message)
         cancel_check: Optional callback function that returns True if cancellation is requested
         
@@ -34,7 +35,7 @@ def find_matching_skins(target_image_path, search_directory, top_n=5, progress_c
     """
     
     # Extract features from target image
-    target_features, error = get_image_features(target_image_path)
+    target_features, error = get_image_features(target_image_path, algorithm=algorithm)
     if target_features is None:
         return None, f"Could not extract features: {error}"
     
@@ -62,11 +63,11 @@ def find_matching_skins(target_image_path, search_directory, top_n=5, progress_c
         if cancel_check and cancel_check():
             return top_matches if top_matches else None, "Cancelled by user"
         
-        candidate_features, error = get_image_features(file_path)
+        candidate_features, error = get_image_features(file_path, algorithm=algorithm)
         
         if candidate_features is not None:
             processed_files += 1
-            distance, metrics = calculate_similarity(target_features, candidate_features)
+            distance, metrics = calculate_similarity(target_features, candidate_features, algorithm=algorithm)
             
             # Keep track of top N matches
             top_matches.append((distance, file_path, metrics))

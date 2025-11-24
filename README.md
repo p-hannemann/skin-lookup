@@ -40,13 +40,21 @@ python gui_main.py
    - **Hypixel Wiki** - Enter a Hypixel Wiki page URL to automatically extract the skin image
 2. Provide input image (file path, URL, or wiki link)
 3. Browse to Prism Launcher skin cache (auto-suggested)
-4. Set number of matches (1-20)
-5. Click "Find Matching Skins"
-6. View results in built-in viewer
+4. **Select matching algorithm** (see Algorithms section below)
+5. Set number of matches (1-20)
+6. Click "Find Matching Skins"
+7. View results in built-in viewer
 
 **Example URLs:**
 - Direct: `https://www.minecraftskins.com/uploads/preview-skins/2022/03/22/minos-inquisitor-20083594.png`
 - Wiki: `https://wiki.hypixel.net/Minos_Inquisitor`
+
+**Matching Algorithms:**
+- 🎯 **Balanced (Default)** - Best general-purpose algorithm using dominant colors (60%), color histogram (35%), and perceptual hashing (5%)
+- 🎨 **Skin-Optimized** - Specifically designed for Minecraft skins, detects 64x64/64x32 textures and analyzes texture patterns
+- 🔬 **Deep Features** - Uses edge detection and structural similarity (SSIM), focuses on shapes and patterns
+- 🌈 **Color Distribution** - Emphasizes overall color presence over exact placement, best for different poses/angles
+- ⚡ **Fast Match** - Quick color-based matching for large datasets (10,000+ files)
 
 **Cache Locations:**
 - Windows: `%APPDATA%\PrismLauncher\assets\skins`
@@ -65,9 +73,13 @@ python gui_main.py
 
 ## 🔧 Technical Details
 
-**Matching Algorithm:**
-- Dominant Colors (60%) - Color palette comparison
-- Color Histogram (35%) - Distribution analysis
+**Matching Algorithms:**
+The tool offers five different algorithms optimized for various scenarios:
+- **Balanced** - General-purpose: dominant colors (60%), histogram (35%), hashing (5%)
+- **Skin-Optimized** - Minecraft-specific: texture patterns (40%), colors (35%), dimension matching (15%), histogram (10%)
+- **Deep Features** - Structure-focused: edge detection (50%), SSIM (30%), colors (20%)
+- **Color Distribution** - Color-emphasis: histogram (70%), dominant colors (30%)
+- **Fast Match** - Speed-optimized: histogram (80%), hashing (20%)
 - Perceptual Hash (5%) - Structural similarity
 
 **Requirements:** Python 3.11+, Pillow, NumPy, ImageHash
