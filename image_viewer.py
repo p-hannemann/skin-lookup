@@ -81,12 +81,7 @@ class ImageViewerWindow:
         info_frame.pack_propagate(False)  # Prevent frame from shrinking
         
         self.filename_label = tk.Label(info_frame, text="", font=("Arial", 10, "bold"), bg="#f0f0f0")
-        self.filename_label.pack(side=tk.LEFT)
-        
-        open_location_btn = tk.Button(info_frame, text="Open in Explorer", 
-                                      command=self.open_in_explorer,
-                                      font=("Arial", 9))
-        open_location_btn.pack(side=tk.RIGHT, padx=5)
+        self.filename_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         self.counter_label = tk.Label(info_frame, text="", font=("Arial", 9), bg="#f0f0f0")
         self.counter_label.pack(side=tk.RIGHT, padx=10)
@@ -98,7 +93,7 @@ class ImageViewerWindow:
         self.image_label = tk.Label(self.image_frame, bg="gray", width=1, height=1)
         self.image_label.pack(expand=True, fill=tk.BOTH)
         
-        # Navigation buttons with fixed height
+        # Navigation and action buttons with fixed height
         nav_frame = tk.Frame(self.window, padx=10, pady=10, height=50)
         nav_frame.pack(fill=tk.X)
         nav_frame.pack_propagate(False)  # Prevent frame from shrinking
@@ -106,14 +101,36 @@ class ImageViewerWindow:
         self.prev_btn = tk.Button(nav_frame, text="← Previous", 
                                   command=self.previous_image,
                                   font=("Arial", 10, "bold"),
-                                  width=15, pady=5)
+                                  width=12, pady=5)
         self.prev_btn.pack(side=tk.LEFT, padx=5)
         
         self.next_btn = tk.Button(nav_frame, text="Next →", 
                                   command=self.next_image,
                                   font=("Arial", 10, "bold"),
-                                  width=15, pady=5)
-        self.next_btn.pack(side=tk.RIGHT, padx=5)
+                                  width=12, pady=5)
+        self.next_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Action buttons in the center
+        open_location_btn = tk.Button(nav_frame, text="Explorer", 
+                                      command=self.open_in_explorer,
+                                      font=("Arial", 9),
+                                      width=10, pady=5)
+        open_location_btn.pack(side=tk.LEFT, padx=5)
+        self._create_tooltip(open_location_btn, "Open file location in Windows Explorer")
+        
+        open_viewer_btn = tk.Button(nav_frame, text="Viewer", 
+                                    command=self.open_in_viewer,
+                                    font=("Arial", 9),
+                                    width=10, pady=5)
+        open_viewer_btn.pack(side=tk.LEFT, padx=5)
+        self._create_tooltip(open_viewer_btn, "Open in Windows default image viewer")
+        
+        open_paint_btn = tk.Button(nav_frame, text="Paint", 
+                                   command=self.open_in_paint,
+                                   font=("Arial", 9),
+                                   width=10, pady=5)
+        open_paint_btn.pack(side=tk.LEFT, padx=5)
+        self._create_tooltip(open_paint_btn, "Open in Microsoft Paint for editing")
         
         # Keyboard bindings
         self.window.bind("<Left>", lambda e: self.previous_image())
@@ -122,6 +139,25 @@ class ImageViewerWindow:
         # Bind resize event to update image
         self.window.bind("<Configure>", self.on_window_resize)
         self.last_window_size = (self.window.winfo_width(), self.window.winfo_height())
+    
+    def _create_tooltip(self, widget, text):
+        """Create a tooltip for a widget."""
+        def on_enter(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            label = tk.Label(tooltip, text=text, background="#ffffe0", 
+                           relief=tk.SOLID, borderwidth=1, font=("Arial", 9))
+            label.pack()
+            widget._tooltip = tooltip
+        
+        def on_leave(event):
+            if hasattr(widget, '_tooltip'):
+                widget._tooltip.destroy()
+                del widget._tooltip
+        
+        widget.bind("<Enter>", on_enter)
+        widget.bind("<Leave>", on_leave)
     
     def on_window_resize(self, event):
         """Handle window resize to rescale image."""
@@ -172,7 +208,8 @@ class ImageViewerWindow:
             new_width = int(img_width * scale)
             new_height = int(img_height * scale)
             
-            img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            # Use NEAREST for pixel art to keep sharp edges
+            img_resized = img.resize((new_width, new_height), Image.Resampling.NEAREST)
             
             # Convert to PhotoImage
             photo = ImageTk.PhotoImage(img_resized)
@@ -204,3 +241,29 @@ class ImageViewerWindow:
         
         # Open explorer and select the file
         subprocess.run(['explorer', '/select,', str(image_path.absolute())])
+    
+    def open_in_viewer(self):
+        """Open image in Windows default image viewer."""
+        if not self.image_files:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        
+        try:
+            # Use os.startfile to open with default viewer
+            os.startfile(str(image_path.absolute()))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open image in viewer:\n{e}")
+    
+    def open_in_paint(self):
+        """Open image in Microsoft Paint."""
+        if not self.image_files:
+            return
+        
+        image_path = self.image_files[self.current_index]
+        
+        try:
+            # Open with mspaint.exe
+            subprocess.run(['mspaint', str(image_path.absolute())])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open image in Paint:\n{e}")

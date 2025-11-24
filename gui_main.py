@@ -456,7 +456,13 @@ class SkinCopierGUI:
             self.input_image_path.set(file_path)
     
     def browse_search_directory(self):
-        initial_dir = os.getcwd()
+        # Try to use Prism Launcher assets folder if it exists
+        prism_skins_path = Path(os.path.expanduser("~")) / "AppData" / "Roaming" / "PrismLauncher" / "assets"
+        if prism_skins_path.exists():
+            initial_dir = str(prism_skins_path)
+        else:
+            initial_dir = os.getcwd()
+        
         folder = filedialog.askdirectory(title="Select Search Directory", initialdir=initial_dir)
         if folder:
             self.search_dir_path.set(folder)
