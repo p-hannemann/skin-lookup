@@ -32,7 +32,7 @@ jobs:
         pyinstaller --onefile --noconsole --name="SkinCopier" copy_skins.py
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: SkinCopier-Windows
         path: dist/SkinCopier.exe
