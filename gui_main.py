@@ -19,194 +19,411 @@ class SkinCopierGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Skin Copier & Matcher")
-        self.root.geometry("700x500")
+        self.root.geometry("850x600")
         self.root.resizable(True, True)
         self.is_processing = False
         self.should_cancel = False
         self.current_output_dir = None
         self.last_output_dir = None
         
+        # Modern color scheme
+        self.colors = {
+            'primary': '#2196F3',
+            'primary_dark': '#1976D2',
+            'success': '#4CAF50',
+            'success_dark': '#388E3C',
+            'danger': '#f44336',
+            'danger_dark': '#D32F2F',
+            'bg': '#f5f5f5',
+            'card': '#ffffff',
+            'text': '#212121',
+            'text_secondary': '#757575',
+            'border': '#e0e0e0'
+        }
+        
+        # Configure root background
+        self.root.configure(bg=self.colors['bg'])
+        
+        # Configure ttk styles
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TNotebook', background=self.colors['bg'], borderwidth=0, tabmargins=[0, 0, 0, 0])
+        style.configure('TNotebook.Tab', 
+                       padding=[20, 10], 
+                       font=('Segoe UI', 10),
+                       background=self.colors['card'],
+                       borderwidth=0,
+                       width=15)
+        style.map('TNotebook.Tab', 
+                 background=[('selected', self.colors['card']), ('!selected', self.colors['card'])],
+                 foreground=[('selected', self.colors['primary']), ('!selected', self.colors['text'])],
+                 borderwidth=[('selected', 0), ('!selected', 0)],
+                 padding=[('selected', [20, 10]), ('!selected', [20, 10])])
+        
         # Create notebook for tabs
         self.notebook = ttk.Notebook(root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Create tabs
         self.create_matcher_tab()
         self.create_copier_tab()
         
         # Footer with credits
-        footer_frame = tk.Frame(root, padx=10, pady=5)
+        footer_frame = tk.Frame(root, padx=15, pady=10, bg=self.colors['bg'])
         footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
         
         credits_label = tk.Label(footer_frame, 
                                 text="☕ Made by SoulReturns", 
-                                font=("Arial", 9),
-                                fg="gray")
+                                font=("Segoe UI", 9),
+                                fg=self.colors['text_secondary'],
+                                bg=self.colors['bg'])
         credits_label.pack(side=tk.LEFT)
         
         discord_label = tk.Label(footer_frame, 
                                 text="Discord: soulreturns", 
-                                font=("Arial", 9),
+                                font=("Segoe UI", 9),
                                 fg="#5865F2",
+                                bg=self.colors['bg'],
                                 cursor="hand2")
         discord_label.pack(side=tk.RIGHT)
         discord_label.bind("<Button-1>", lambda e: self.open_discord())
+        discord_label.bind("<Enter>", lambda e: discord_label.config(font=("Segoe UI", 9, "underline")))
+        discord_label.bind("<Leave>", lambda e: discord_label.config(font=("Segoe UI", 9)))
     
     def create_matcher_tab(self):
         """Create the skin matcher tab."""
-        matcher_frame = tk.Frame(self.notebook)
-        self.notebook.add(matcher_frame, text="Skin Matcher")
+        matcher_frame = tk.Frame(self.notebook, bg=self.colors['bg'])
+        self.notebook.add(matcher_frame, text="🔍 Skin Matcher")
+        
+        # Instructions banner
+        instructions_frame = tk.Frame(matcher_frame, bg="#E3F2FD", relief=tk.FLAT, padx=15, pady=12)
+        instructions_frame.pack(fill=tk.X, padx=15, pady=(15, 0))
+        
+        tk.Label(instructions_frame, 
+                text="💡 Find skins in Prism Launcher's cache", 
+                font=("Segoe UI", 10, "bold"), 
+                bg="#E3F2FD",
+                fg=self.colors['primary']).pack(anchor=tk.W)
+        tk.Label(instructions_frame, 
+                text="Select your rendered skin image, then browse to: AppData\\Roaming\\PrismLauncher\\assets\\skins", 
+                font=("Segoe UI", 9), 
+                bg="#E3F2FD",
+                fg=self.colors['text_secondary']).pack(anchor=tk.W, pady=(2, 0))
+        
+        # Main content card
+        content_card = tk.Frame(matcher_frame, bg=self.colors['card'], relief=tk.FLAT)
+        content_card.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
         # Input image selection
-        frame_input = tk.Frame(matcher_frame, padx=10, pady=10)
+        frame_input = tk.Frame(content_card, bg=self.colors['card'], padx=20, pady=15)
         frame_input.pack(fill=tk.X)
         
-        tk.Label(frame_input, text="Input Image (to match):", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        tk.Label(frame_input, 
+                text="Input Image", 
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(anchor=tk.W)
         
-        img_frame = tk.Frame(frame_input)
-        img_frame.pack(fill=tk.X, pady=5)
+        img_frame = tk.Frame(frame_input, bg=self.colors['card'])
+        img_frame.pack(fill=tk.X, pady=(5, 0))
         
         self.input_image_path = tk.StringVar()
-        entry = tk.Entry(img_frame, textvariable=self.input_image_path, font=("Arial", 10))
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        entry = tk.Entry(img_frame, 
+                        textvariable=self.input_image_path, 
+                        font=("Segoe UI", 10),
+                        relief=tk.SOLID,
+                        borderwidth=1)
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), ipady=6)
         
-        browse_img_btn = tk.Button(img_frame, text="Browse", command=self.browse_input_image, width=10)
+        browse_img_btn = tk.Button(img_frame, 
+                                   text="Browse...", 
+                                   command=self.browse_input_image,
+                                   font=("Segoe UI", 9),
+                                   bg=self.colors['card'],
+                                   fg=self.colors['primary'],
+                                   relief=tk.SOLID,
+                                   borderwidth=1,
+                                   padx=15,
+                                   pady=6,
+                                   cursor="hand2")
         browse_img_btn.pack(side=tk.RIGHT)
+        self._add_button_hover(browse_img_btn, self.colors['primary'], '#ffffff')
         
         # Search directory selection
-        tk.Label(frame_input, text="Search Directory (skins folder):", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10, 0))
+        tk.Label(frame_input, 
+                text="Search Directory", 
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(anchor=tk.W, pady=(15, 0))
         
-        dir_frame = tk.Frame(frame_input)
-        dir_frame.pack(fill=tk.X, pady=5)
+        dir_frame = tk.Frame(frame_input, bg=self.colors['card'])
+        dir_frame.pack(fill=tk.X, pady=(5, 0))
         
         self.search_dir_path = tk.StringVar()
-        entry2 = tk.Entry(dir_frame, textvariable=self.search_dir_path, font=("Arial", 10))
-        entry2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        entry2 = tk.Entry(dir_frame, 
+                         textvariable=self.search_dir_path, 
+                         font=("Segoe UI", 10),
+                         relief=tk.SOLID,
+                         borderwidth=1)
+        entry2.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), ipady=6)
         
-        browse_dir_btn = tk.Button(dir_frame, text="Browse", command=self.browse_search_directory, width=10)
+        browse_dir_btn = tk.Button(dir_frame, 
+                                   text="Browse...", 
+                                   command=self.browse_search_directory,
+                                   font=("Segoe UI", 9),
+                                   bg=self.colors['card'],
+                                   fg=self.colors['primary'],
+                                   relief=tk.SOLID,
+                                   borderwidth=1,
+                                   padx=15,
+                                   pady=6,
+                                   cursor="hand2")
         browse_dir_btn.pack(side=tk.RIGHT)
+        self._add_button_hover(browse_dir_btn, self.colors['primary'], '#ffffff')
         
         # Number of matches
-        match_frame = tk.Frame(frame_input)
-        match_frame.pack(fill=tk.X, pady=5)
+        match_frame = tk.Frame(frame_input, bg=self.colors['card'])
+        match_frame.pack(fill=tk.X, pady=(15, 0))
         
-        tk.Label(match_frame, text="Top matches to find:", font=("Arial", 9)).pack(side=tk.LEFT)
+        tk.Label(match_frame, 
+                text="Top matches:", 
+                font=("Segoe UI", 9),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(side=tk.LEFT)
         self.top_n_matches = tk.IntVar(value=5)
-        spinner = tk.Spinbox(match_frame, from_=1, to=20, textvariable=self.top_n_matches, width=5, font=("Arial", 9))
-        spinner.pack(side=tk.LEFT, padx=5)
+        spinner = tk.Spinbox(match_frame, 
+                            from_=1, 
+                            to=20, 
+                            textvariable=self.top_n_matches, 
+                            width=6, 
+                            font=("Segoe UI", 10),
+                            relief=tk.SOLID,
+                            borderwidth=1)
+        spinner.pack(side=tk.LEFT, padx=8)
         
         # Buttons frame
-        btn_frame = tk.Frame(matcher_frame)
-        btn_frame.pack(pady=10)
+        btn_frame = tk.Frame(content_card, bg=self.colors['card'], pady=15)
+        btn_frame.pack(fill=tk.X, padx=20)
         
-        self.match_btn = tk.Button(btn_frame, text="Find Matching Skins", 
+        self.match_btn = tk.Button(btn_frame, 
+                                   text="🔍 Find Matching Skins", 
                                    command=self.find_matches,
-                                   font=("Arial", 11, "bold"),
-                                   bg="#4CAF50", fg="white",
-                                   padx=20, pady=10)
-        self.match_btn.pack(side=tk.LEFT, padx=5)
+                                   font=("Segoe UI", 11, "bold"),
+                                   bg=self.colors['success'],
+                                   fg="white",
+                                   relief=tk.FLAT,
+                                   padx=25, 
+                                   pady=12,
+                                   cursor="hand2")
+        self.match_btn.pack(side=tk.LEFT, padx=(0, 8))
+        self._add_button_hover(self.match_btn, self.colors['success_dark'], 'white', flat=True)
         
-        self.match_cancel_btn = tk.Button(btn_frame, text="Cancel", 
+        self.match_cancel_btn = tk.Button(btn_frame, 
+                                         text="Cancel", 
                                          command=self.cancel_matching,
-                                         font=("Arial", 11, "bold"),
-                                         bg="#f44336", fg="white",
-                                         padx=20, pady=10,
+                                         font=("Segoe UI", 10),
+                                         bg=self.colors['danger'],
+                                         fg="white",
+                                         relief=tk.FLAT,
+                                         padx=20, 
+                                         pady=12,
+                                         cursor="hand2",
                                          state=tk.DISABLED)
-        self.match_cancel_btn.pack(side=tk.LEFT, padx=5)
+        self.match_cancel_btn.pack(side=tk.LEFT, padx=4)
+        self._add_button_hover(self.match_cancel_btn, self.colors['danger_dark'], 'white', flat=True)
         
-        self.view_matches_btn = tk.Button(btn_frame, text="View Matches", 
+        self.view_matches_btn = tk.Button(btn_frame, 
+                                         text="👁️ View Results", 
                                          command=self.view_match_results,
-                                         font=("Arial", 11, "bold"),
-                                         bg="#2196F3", fg="white",
-                                         padx=20, pady=10,
+                                         font=("Segoe UI", 10),
+                                         bg=self.colors['primary'],
+                                         fg="white",
+                                         relief=tk.FLAT,
+                                         padx=20, 
+                                         pady=12,
+                                         cursor="hand2",
                                          state=tk.DISABLED)
-        self.view_matches_btn.pack(side=tk.LEFT, padx=5)
+        self.view_matches_btn.pack(side=tk.LEFT, padx=4)
+        self._add_button_hover(self.view_matches_btn, self.colors['primary_dark'], 'white', flat=True)
         
         # Log area
-        log_frame = tk.Frame(matcher_frame, padx=10, pady=5)
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        log_frame = tk.Frame(content_card, bg=self.colors['card'], padx=20)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         
-        tk.Label(log_frame, text="Log:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        tk.Label(log_frame, 
+                text="Activity Log", 
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(anchor=tk.W, pady=5)
         
-        self.matcher_log_text = scrolledtext.ScrolledText(log_frame, height=10, 
+        self.matcher_log_text = scrolledtext.ScrolledText(log_frame, 
+                                                          height=8, 
                                                           font=("Consolas", 9),
+                                                          relief=tk.SOLID,
+                                                          borderwidth=1,
                                                           state=tk.DISABLED)
-        self.matcher_log_text.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.matcher_log_text.pack(fill=tk.BOTH, expand=True)
     
     def create_copier_tab(self):
         """Create the file copier tab."""
-        copier_frame = tk.Frame(self.notebook)
-        self.notebook.add(copier_frame, text="File Copier")
+        copier_frame = tk.Frame(self.notebook, bg=self.colors['bg'])
+        self.notebook.add(copier_frame, text="📁 File Copier")
+        
+        # Instructions banner
+        instructions_frame = tk.Frame(copier_frame, bg="#FFF3E0", relief=tk.FLAT, padx=15, pady=12)
+        instructions_frame.pack(fill=tk.X, padx=15, pady=(15, 0))
+        
+        tk.Label(instructions_frame, 
+                text="💡 Batch copy files with .png extension", 
+                font=("Segoe UI", 10, "bold"), 
+                bg="#FFF3E0",
+                fg="#F57C00").pack(anchor=tk.W)
+        tk.Label(instructions_frame, 
+                text="Select a folder and files will be copied to [folder]_png with .png extension automatically added", 
+                font=("Segoe UI", 9), 
+                bg="#FFF3E0",
+                fg=self.colors['text_secondary']).pack(anchor=tk.W, pady=(2, 0))
+        
+        # Main content card
+        content_card = tk.Frame(copier_frame, bg=self.colors['card'], relief=tk.FLAT)
+        content_card.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
         # Input folder selection
-        frame_input = tk.Frame(copier_frame, padx=10, pady=10)
+        frame_input = tk.Frame(content_card, bg=self.colors['card'], padx=20, pady=15)
         frame_input.pack(fill=tk.X)
         
-        tk.Label(frame_input, text="Input Folder:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        tk.Label(frame_input, 
+                text="Input Folder", 
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(anchor=tk.W)
         
-        folder_frame = tk.Frame(frame_input)
-        folder_frame.pack(fill=tk.X, pady=5)
+        folder_frame = tk.Frame(frame_input, bg=self.colors['card'])
+        folder_frame.pack(fill=tk.X, pady=(5, 0))
         
         self.folder_path = tk.StringVar()
-        entry = tk.Entry(folder_frame, textvariable=self.folder_path, font=("Arial", 10))
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        entry = tk.Entry(folder_frame, 
+                        textvariable=self.folder_path, 
+                        font=("Segoe UI", 10),
+                        relief=tk.SOLID,
+                        borderwidth=1)
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), ipady=6)
         
-        browse_btn = tk.Button(folder_frame, text="Browse", command=self.browse_folder, width=10)
+        browse_btn = tk.Button(folder_frame, 
+                              text="Browse...", 
+                              command=self.browse_folder,
+                              font=("Segoe UI", 9),
+                              bg=self.colors['card'],
+                              fg=self.colors['primary'],
+                              relief=tk.SOLID,
+                              borderwidth=1,
+                              padx=15,
+                              pady=6,
+                              cursor="hand2")
         browse_btn.pack(side=tk.RIGHT)
+        self._add_button_hover(browse_btn, self.colors['primary'], '#ffffff')
         
         # Info label
-        info_label = tk.Label(frame_input, text="Output will be created as: [input_folder]_png", 
-                             fg="gray", font=("Arial", 9))
-        info_label.pack(anchor=tk.W)
+        info_label = tk.Label(frame_input, 
+                             text="→ Output will be created as: [input_folder]_png", 
+                             fg=self.colors['text_secondary'], 
+                             bg=self.colors['card'],
+                             font=("Segoe UI", 9))
+        info_label.pack(anchor=tk.W, pady=(8, 0))
         
         # Merge files toggle
         self.merge_files = tk.BooleanVar(value=False)
         merge_check = tk.Checkbutton(frame_input, 
                                      text="Merge all files into single folder (no subdirectories)",
                                      variable=self.merge_files,
-                                     font=("Arial", 9))
-        merge_check.pack(anchor=tk.W, pady=(5, 0))
+                                     bg=self.colors['card'],
+                                     font=("Segoe UI", 9))
+        merge_check.pack(anchor=tk.W, pady=(12, 0))
         
         # Buttons frame
-        btn_frame = tk.Frame(copier_frame)
-        btn_frame.pack(pady=10)
+        btn_frame = tk.Frame(content_card, bg=self.colors['card'], pady=15)
+        btn_frame.pack(fill=tk.X, padx=20)
         
-        self.process_btn = tk.Button(btn_frame, text="Copy and Add .png Extension", 
+        self.process_btn = tk.Button(btn_frame, 
+                                     text="📦 Copy and Add .png Extension", 
                                      command=self.process_folder, 
-                                     font=("Arial", 11, "bold"),
-                                     bg="#4CAF50", fg="white",
-                                     padx=20, pady=10)
-        self.process_btn.pack(side=tk.LEFT, padx=5)
+                                     font=("Segoe UI", 11, "bold"),
+                                     bg=self.colors['success'],
+                                     fg="white",
+                                     relief=tk.FLAT,
+                                     padx=25,
+                                     pady=12,
+                                     cursor="hand2")
+        self.process_btn.pack(side=tk.LEFT, padx=(0, 8))
+        self._add_button_hover(self.process_btn, self.colors['success_dark'], 'white', flat=True)
         
-        self.cancel_btn = tk.Button(btn_frame, text="Cancel", 
+        self.cancel_btn = tk.Button(btn_frame, 
+                                    text="Cancel", 
                                     command=self.cancel_process, 
-                                    font=("Arial", 11, "bold"),
-                                    bg="#f44336", fg="white",
-                                    padx=20, pady=10,
+                                    font=("Segoe UI", 10),
+                                    bg=self.colors['danger'],
+                                    fg="white",
+                                    relief=tk.FLAT,
+                                    padx=20,
+                                    pady=12,
+                                    cursor="hand2",
                                     state=tk.DISABLED)
-        self.cancel_btn.pack(side=tk.LEFT, padx=5)
+        self.cancel_btn.pack(side=tk.LEFT, padx=4)
+        self._add_button_hover(self.cancel_btn, self.colors['danger_dark'], 'white', flat=True)
         
-        self.viewer_btn = tk.Button(btn_frame, text="View Images", 
+        self.viewer_btn = tk.Button(btn_frame, 
+                                    text="👁️ View Images", 
                                     command=self.open_image_viewer, 
-                                    font=("Arial", 11, "bold"),
-                                    bg="#2196F3", fg="white",
-                                    padx=20, pady=10)
-        self.viewer_btn.pack(side=tk.LEFT, padx=5)
+                                    font=("Segoe UI", 10),
+                                    bg=self.colors['primary'],
+                                    fg="white",
+                                    relief=tk.FLAT,
+                                    padx=20,
+                                    pady=12,
+                                    cursor="hand2")
+        self.viewer_btn.pack(side=tk.LEFT, padx=4)
+        self._add_button_hover(self.viewer_btn, self.colors['primary_dark'], 'white', flat=True)
         
         # Check for existing output directory on startup
         self.check_for_existing_output()
         self.update_viewer_button_state()
         
         # Log area
-        log_frame = tk.Frame(copier_frame, padx=10, pady=5)
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        log_frame = tk.Frame(content_card, bg=self.colors['card'], padx=20)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         
-        tk.Label(log_frame, text="Log:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        tk.Label(log_frame, 
+                text="Activity Log", 
+                font=("Segoe UI", 10, "bold"),
+                bg=self.colors['card'],
+                fg=self.colors['text']).pack(anchor=tk.W, pady=5)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, 
+        self.log_text = scrolledtext.ScrolledText(log_frame, 
+                                                  height=8, 
                                                   font=("Consolas", 9),
+                                                  relief=tk.SOLID,
+                                                  borderwidth=1,
                                                   state=tk.DISABLED)
-        self.log_text.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.log_text.pack(fill=tk.BOTH, expand=True)
+    
+    def _add_button_hover(self, button, hover_bg, hover_fg=None, flat=False):
+        """Add hover effect to a button."""
+        original_bg = button.cget('bg')
+        original_fg = button.cget('fg')
+        
+        def on_enter(e):
+            if button['state'] != 'disabled':
+                button['bg'] = hover_bg
+                if hover_fg:
+                    button['fg'] = hover_fg
+        
+        def on_leave(e):
+            if button['state'] != 'disabled':
+                button['bg'] = original_bg
+                button['fg'] = original_fg
+        
+        button.bind("<Enter>", on_enter)
+        button.bind("<Leave>", on_leave)
     
     def browse_input_image(self):
         initial_dir = os.getcwd()
