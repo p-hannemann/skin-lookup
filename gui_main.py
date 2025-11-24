@@ -264,7 +264,8 @@ class SkinCopierGUI:
         algorithm_dropdown['values'] = (
             "Balanced (Default)",
             "Skin-Optimized",
-            "AI Perceptual (Neural Network)",
+            "AI Perceptual (ResNet18)",
+            "AI Mobile (MobileNetV2)",
             "Deep Features",
             "Color Distribution",
             "Fast Match"
@@ -863,6 +864,28 @@ class SkinCopierGUI:
             messagebox.showerror("Error", f"Search directory does not exist: {search_dir}")
             return
         
+        # Warn about AI algorithms on large datasets
+        algo_choice = self.algorithm_choice.get()
+        if "AI" in algo_choice:
+            # Quick file count estimate
+            from pathlib import Path
+            file_count = sum(1 for _ in Path(search_dir).rglob('*') if _.is_file())
+            if file_count > 10000:
+                estimated_time = (file_count / 50) / 60  # ~50 files/sec on GPU, convert to minutes
+                response = messagebox.askyesno(
+                    "Large Dataset Warning",
+                    f"Found ~{file_count:,} files.\n\n"
+                    f"AI algorithms are SLOW on large datasets!\n"
+                    f"Estimated time: {int(estimated_time)} minutes\n\n"
+                    f"💡 Recommendation:\n"
+                    f"• Use 'Fast Match' or 'Color Distribution' first\n"
+                    f"• Or reduce your search directory size\n\n"
+                    f"Continue with AI algorithm anyway?",
+                    icon='warning'
+                )
+                if not response:
+                    return
+        
         # Clear log
         self.matcher_log_text.config(state=tk.NORMAL)
         self.matcher_log_text.delete(1.0, tk.END)
@@ -893,7 +916,8 @@ class SkinCopierGUI:
             algo_map = {
                 "Balanced (Default)": "balanced",
                 "Skin-Optimized": "skin_optimized",
-                "AI Perceptual (Neural Network)": "ai_perceptual",
+                "AI Perceptual (ResNet18)": "ai_perceptual",
+                "AI Mobile (MobileNetV2)": "ai_mobile",
                 "Deep Features": "deep_features",
                 "Color Distribution": "color_distribution",
                 "Fast Match": "fast"
@@ -903,14 +927,26 @@ class SkinCopierGUI:
             self.matcher_log(f"Algorithm: {self.algorithm_choice.get()}")
             self.matcher_log(f"Finding top {self.top_n_matches.get()} matches...\n")
             
-            matches, error = find_matching_skins(
-                actual_image_path,
-                search_dir,
-                top_n=self.top_n_matches.get(),
-                algorithm=algorithm,
-                progress_callback=progress_callback,
-                cancel_check=lambda: self.should_cancel
-            )
+            try:
+                matches, error = find_matching_skins(
+                    actual_image_path,
+                    search_dir,
+                    top_n=self.top_n_matches.get(),
+                    algorithm=algorithm,
+                    progress_callback=progress_callback,
+                    cancel_check=lambda: self.should_cancel
+                )
+            except Exception as e:
+                self.is_processing = False
+                self.match_btn.config(state=tk.NORMAL)
+                self.match_cancel_btn.config(state=tk.DISABLED)
+                error_msg = f"Matching failed: {type(e).__name__}: {e}"
+                print(f"[ERROR] {error_msg}")
+                import traceback
+                traceback.print_exc()
+                messagebox.showerror("Error", error_msg)
+                self.matcher_log(f"\n❌ Error: {error_msg}")
+                return
             
             self.is_processing = False
             
@@ -947,8 +983,12 @@ class SkinCopierGUI:
                         metric_parts.append(f"DimMatch: {metrics['dim_match']:.2f}")
                     if 'ai_dist' in metrics:
                         metric_parts.append(f"AI: {metrics['ai_dist']:.4f}")
+                    if 'mobile_dist' in metrics:
+                        metric_parts.append(f"Mobile: {metrics['mobile_dist']:.4f}")
                     if 'ai_unavailable' in metrics:
                         metric_parts.append(f"AI: N/A (PyTorch not installed)")
+                    if 'mobile_unavailable' in metrics:
+                        metric_parts.append(f"Mobile: N/A (PyTorch not installed)")
                     
                     self.matcher_log(f"   {' | '.join(metric_parts)}")
                 
@@ -1096,7 +1136,7 @@ class SkinCopierGUI:
         self.debug_log(f"Algorithm changed to: {selected}")
         
         # Show/hide AI test button based on selection
-        if "AI Perceptual" in selected:
+        if "AI Perceptual" in selected or "AI Mobile" in selected:
             self.ai_test_btn.pack(side=tk.LEFT, padx=8)
         else:
             self.ai_test_btn.pack_forget()
@@ -1179,8 +1219,11 @@ Optimal for most cases. Uses dominant colors (60%), color histogram (35%), and p
 🎨 Skin-Optimized
 Designed for Minecraft skins. Detects 64x64/64x32 textures, analyzes texture patterns, and focuses on skin-specific features. Best for finding exact skin matches.
 
-🤖 AI Perceptual (Neural Network)
-Uses pre-trained ResNet18 deep learning model for perceptual similarity. Extracts high-level visual features (70%), combined with colors (20%) and histogram (10%). Most powerful algorithm, understands visual similarity like a human would. Requires PyTorch installation.
+🤖 AI Perceptual (ResNet18)
+Uses ResNet18 deep learning for feature extraction. Focuses on deep semantic features (50%), colors (35%), and histogram (15%). Good for general image matching. Requires PyTorch + GPU.
+
+📱 AI Mobile (MobileNetV2) - RECOMMENDED FOR 3D→2D
+Uses MobileNetV2 optimized for texture matching. Better at matching 3D rendered views to flat 2D skins. Weights: mobile features (60%), colors (25%), histogram (10%), hash (5%). BEST for matching rendered character images to skin textures! Requires PyTorch + GPU.
 
 🔬 Deep Features
 Uses edge detection and structural similarity (SSIM). Focuses on shapes and patterns rather than colors. Good for similar armor/clothing styles.
@@ -1191,7 +1234,7 @@ Emphasizes overall color presence over exact placement. Best when rendered pose/
 ⚡ Fast Match
 Quick color-based matching using smaller histograms. Faster but less accurate. Good for large datasets (10,000+ files).
 
-💡 Tip: Try AI Perceptual first for best results, then Skin-Optimized!"""
+💡 Tip: Use AI Mobile for 3D renders, Skin-Optimized for flat skins!"""
         
         messagebox.showinfo("Algorithm Information", info_text)
     

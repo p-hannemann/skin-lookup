@@ -35,7 +35,15 @@ def find_matching_skins(target_image_path, search_directory, top_n=5, algorithm=
     """
     
     # Extract features from target image
+    print(f"[DEBUG] Extracting features from target image: {target_image_path}")
+    if progress_callback:
+        progress_callback(0, 0, "Extracting features from target image...")
+    
+    feature_start = time.time()
     target_features, error = get_image_features(target_image_path, algorithm=algorithm)
+    feature_time = time.time() - feature_start
+    
+    print(f"[DEBUG] Target features extraction complete in {feature_time:.2f}s. Success: {target_features is not None}")
     if target_features is None:
         return None, f"Could not extract features: {error}"
     
@@ -76,13 +84,17 @@ def find_matching_skins(target_image_path, search_directory, top_n=5, algorithm=
         else:
             skipped_files += 1
         
-        # Progress update
-        if progress_callback and (idx % 100 == 0 or idx == total_files):
+        # Progress update - show every 10 files for AI algorithms, every 100 for others
+        update_interval = 10 if algorithm in ["ai_perceptual", "ai_mobile"] else 100
+        if progress_callback and (idx % update_interval == 0 or idx == total_files):
             elapsed = time.time() - start_time
             if idx > 0:
                 avg_time = elapsed / idx
+                files_per_sec = idx / elapsed
                 eta_seconds = avg_time * (total_files - idx)
-                progress_callback(idx, total_files, f"Processing... ETA: {int(eta_seconds)}s")
+                eta_minutes = int(eta_seconds / 60)
+                eta_str = f"{eta_minutes}m {int(eta_seconds % 60)}s" if eta_minutes > 0 else f"{int(eta_seconds)}s"
+                progress_callback(idx, total_files, f"Processing ({files_per_sec:.1f} files/sec)... ETA: {eta_str}")
     
     return top_matches, None
 

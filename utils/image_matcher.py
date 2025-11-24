@@ -27,9 +27,11 @@ try:
     TORCH_AVAILABLE = True
     print(f"[INFO] PyTorch {torch.__version__} loaded successfully (CUDA: {torch.cuda.is_available()})")
     
-    # Initialize model globally to avoid reloading
+    # Initialize models globally to avoid reloading
     _ai_model = None
     _ai_transform = None
+    _mobile_model = None
+    _mobile_transform = None
     
     def _get_ai_model():
         global _ai_model, _ai_transform
@@ -43,14 +45,39 @@ try:
             # Move to GPU if available
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             _ai_model = _ai_model.to(device)
-            print(f"[INFO] AI model loaded on device: {device}")
+            print(f"[INFO] ResNet18 model loaded on device: {device}")
             
             _ai_transform = transforms.Compose([
-                transforms.Resize((224, 224)),
+                # Use larger size to preserve pixel art details
+                transforms.Resize((256, 256), interpolation=transforms.InterpolationMode.NEAREST),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                # Lighter normalization for pixel art (not natural images)
+                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
             ])
         return _ai_model, _ai_transform
+    
+    def _get_mobile_model():
+        global _mobile_model, _mobile_transform
+        if _mobile_model is None:
+            # MobileNetV2 - better for small/texture images, multi-scale features
+            _mobile_model = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.IMAGENET1K_V1)
+            _mobile_model.eval()
+            # Extract features from multiple layers for better texture matching
+            _mobile_model = torch.nn.Sequential(*list(_mobile_model.children())[:-1])
+            
+            # Move to GPU if available
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            _mobile_model = _mobile_model.to(device)
+            print(f"[INFO] MobileNetV2 model loaded on device: {device}")
+            
+            _mobile_transform = transforms.Compose([
+                # Keep original aspect ratio better, use bilinear for smoother features
+                transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.ToTensor(),
+                # Standard ImageNet normalization works well for MobileNet
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        return _mobile_model, _mobile_transform
     
 except ImportError as e:
     TORCH_AVAILABLE = False
@@ -84,9 +111,15 @@ ALGORITHM_WEIGHTS = {
         "perceptual_hash": 0.20
     },
     "ai_perceptual": {
-        "deep_features": 0.85,
-        "dominant_colors": 0.10,
-        "color_histogram": 0.05
+        "deep_features": 0.50,
+        "dominant_colors": 0.35,
+        "color_histogram": 0.15
+    },
+    "ai_mobile": {
+        "mobile_features": 0.60,
+        "dominant_colors": 0.25,
+        "color_histogram": 0.10,
+        "perceptual_hash": 0.05
     }
 }
 
@@ -224,6 +257,41 @@ def extract_ai_features(img):
         return None
 
 
+def extract_mobile_features(img):
+    """Extract features using MobileNetV2 - better for texture matching."""
+    if not TORCH_AVAILABLE:
+        return None
+    
+    try:
+        model, transform = _get_mobile_model()
+        if model is None:
+            return None
+        
+        # Ensure image is RGB (not RGBA or grayscale)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Transform image and move to same device as model
+        img_tensor = transform(img).unsqueeze(0)
+        device = next(model.parameters()).device
+        img_tensor = img_tensor.to(device)
+        
+        # Extract features
+        with torch.no_grad():
+            features = model(img_tensor)
+        
+        # Flatten to 1D vector and move to CPU for numpy conversion
+        features = features.squeeze().cpu().numpy()
+        
+        # Normalize
+        features = features / (np.linalg.norm(features) + 1e-10)
+        
+        return features
+    except Exception as e:
+        # Silently fail - errors will be caught during testing
+        return None
+
+
 def calculate_ai_similarity(features1, features2):
     """Calculate cosine similarity between deep features."""
     if features1 is None or features2 is None:
@@ -287,15 +355,15 @@ def get_image_features(image_path, algorithm="balanced"):
         }
         
         # Common features for most algorithms
-        if algorithm in ["balanced", "skin_optimized", "fast"]:
+        if algorithm in ["balanced", "skin_optimized", "fast", "ai_perceptual", "ai_mobile"]:
             features['ahash'] = imagehash.average_hash(img, hash_size=8)
         
-        if algorithm in ["balanced", "skin_optimized", "color_distribution", "deep_features", "fast", "ai_perceptual"]:
+        if algorithm in ["balanced", "skin_optimized", "color_distribution", "deep_features", "fast", "ai_perceptual", "ai_mobile"]:
             dominant_colors, color_weights = extract_dominant_colors_fast(img_array, n_colors=12)
             features['dominant_colors'] = dominant_colors
             features['color_weights'] = color_weights
         
-        if algorithm in ["balanced", "color_distribution", "fast", "ai_perceptual"]:
+        if algorithm in ["balanced", "color_distribution", "fast", "ai_perceptual", "ai_mobile"]:
             # Histogram bins based on algorithm
             bins = 16 if algorithm == "fast" else 24
             hist, _ = np.histogramdd(
@@ -328,6 +396,15 @@ def get_image_features(image_path, algorithm="balanced"):
                 features['ai_available'] = ai_features is not None
             else:
                 features['ai_available'] = False
+        
+        # AI Mobile algorithm
+        if algorithm == "ai_mobile":
+            if TORCH_AVAILABLE:
+                mobile_features = extract_mobile_features(img)
+                features['mobile_features'] = mobile_features
+                features['mobile_available'] = mobile_features is not None
+            else:
+                features['mobile_available'] = False
         
         return features, None
 
@@ -510,6 +587,9 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
                 candidate_features['ai_features']
             )
             
+            # Perceptual hash for structural similarity
+            hash_distance = float(target_features['ahash'] - candidate_features['ahash']) / 64.0
+            
             # Color features
             color_distance = color_palette_distance_fast(
                 target_features['dominant_colors'],
@@ -522,14 +602,16 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
             hist2 = candidate_features['histogram']
             hist_distance = np.sum((hist1 - hist2) ** 2 / (hist1 + hist2 + 1e-10)) / 2
             
+            # Combine: AI features + perceptual hash + colors
             combined_distance = (
-                weights['deep_features'] * ai_distance +
+                weights['deep_features'] * (0.7 * ai_distance + 0.3 * hash_distance) +
                 weights['dominant_colors'] * color_distance +
                 weights['color_histogram'] * hist_distance
             )
             
             metrics = {
                 'ai_dist': ai_distance,
+                'hash_dist': hash_distance * 64,
                 'color_dist': color_distance,
                 'hist_dist': hist_distance,
                 'combined': combined_distance
@@ -553,6 +635,66 @@ def calculate_similarity(target_features, candidate_features, algorithm="balance
                 'color_dist': color_distance,
                 'hist_dist': hist_distance,
                 'ai_unavailable': True,
+                'combined': combined_distance
+            }
+    
+    # AI Mobile algorithm
+    elif algorithm == "ai_mobile":
+        if target_features.get('mobile_available') and candidate_features.get('mobile_available'):
+            # MobileNet features
+            mobile_distance = calculate_ai_similarity(
+                target_features['mobile_features'],
+                candidate_features['mobile_features']
+            )
+            
+            # Perceptual hash for structural similarity
+            hash_distance = float(target_features['ahash'] - candidate_features['ahash']) / 64.0
+            
+            # Color features
+            color_distance = color_palette_distance_fast(
+                target_features['dominant_colors'],
+                target_features['color_weights'],
+                candidate_features['dominant_colors'],
+                candidate_features['color_weights']
+            )
+            
+            hist1 = target_features['histogram']
+            hist2 = candidate_features['histogram']
+            hist_distance = np.sum((hist1 - hist2) ** 2 / (hist1 + hist2 + 1e-10)) / 2
+            
+            # MobileNet weighted more heavily for texture matching
+            combined_distance = (
+                weights['mobile_features'] * mobile_distance +
+                weights['dominant_colors'] * color_distance +
+                weights['color_histogram'] * hist_distance +
+                weights['perceptual_hash'] * hash_distance
+            )
+            
+            metrics = {
+                'mobile_dist': mobile_distance,
+                'color_dist': color_distance,
+                'hist_dist': hist_distance,
+                'hash_dist': hash_distance * 64,
+                'combined': combined_distance
+            }
+        else:
+            # Fallback to color-based matching
+            color_distance = color_palette_distance_fast(
+                target_features['dominant_colors'],
+                target_features['color_weights'],
+                candidate_features['dominant_colors'],
+                candidate_features['color_weights']
+            )
+            hist1 = target_features['histogram']
+            hist2 = candidate_features['histogram']
+            hist_distance = np.sum((hist1 - hist2) ** 2 / (hist1 + hist2 + 1e-10)) / 2
+            
+            combined_distance = 0.6 * color_distance + 0.4 * hist_distance
+            
+            metrics = {
+                'color_dist': color_distance,
+                'hist_dist': hist_distance,
+                'mobile_unavailable': True,
                 'combined': combined_distance
             }
     
